@@ -20,8 +20,9 @@ use rayon::prelude::*;
 
 use crate::gpu::{GpuBuffer, GpuEngine, GpuExperts};
 use crate::kernels::{
-    homeostatic_residual_add_inplace, int4_dot_row, int8_matvec, prepare_act_int4, quantize_act_i8,
-    rmsnorm_into, svid_1bit_linear_subspace_w1a4, swiglu_inplace, YarnRopeCache,
+    homeostatic_residual_add_inplace, int4_dot_row, int8_matvec, prepare_act_int4,
+    quantize_act_i8, rmsnorm_into,
+    svid_1bit_linear_subspace_w1a4, swiglu_inplace, YarnRopeCache,
 };
 use crate::safetensors::{BinTokenizer, SafeTensors};
 
@@ -192,6 +193,9 @@ impl SvidEngine {
 
         let st = Arc::new(SafeTensors::open(&gpu_core)?);
         let st_exp = Arc::new(SafeTensors::open(&mmap_experts)?);
+        if std::env::var("MARK_NO_WARM").is_err() {
+            std::hint::black_box(st_exp.warm());
+        }
         let st_s4 = SafeTensors::open(&shard4)?;
         let st_delta = SafeTensors::open(&delta)?;
         // Valida que o delta de calibracao existe e e coerente antes de prosseguir.
@@ -709,11 +713,7 @@ impl SvidEngine {
                     return;
                 }
                 let w = &self.lm_q8[r * HIDDEN..(r + 1) * HIDDEN];
-                let mut acc = 0i32;
-                for i in 0..HIDDEN {
-                    acc += (w[i] as i32) * (x_i8[i] as i32);
-                }
-                *y = (acc as f32) * self.lm_scale[r] * x_sc;
+                *y = (crate::kernels::dot_i8(w, &x_i8) as f32) * self.lm_scale[r] * x_sc;
             });
         }
 
@@ -754,7 +754,6 @@ impl SvidEngine {
         let mut inter_all = vec![0.0f32; n_top * EXPERT_INTER];
         let mut down_all = vec![0.0f32; n_top * HIDDEN];
 
-        // Gate+Up+SwiGLU por expert, paralelizado por chunk de linhas.
         inter_all
             .par_chunks_mut(EXPERT_INTER)
             .enumerate()
@@ -762,19 +761,17 @@ impl SvidEngine {
                 let eid = top[ki].0;
                 let g_off_q = eid * EXPERT_INTER * 1024;
                 let g_off_s = eid * EXPERT_INTER * 16;
-                let u_off_q = eid * EXPERT_INTER * 1024;
-                let u_off_s = eid * EXPERT_INTER * 16;
                 for r in 0..EXPERT_INTER {
                     let g_row = &g_q4[g_off_q + r * 1024..g_off_q + (r + 1) * 1024];
                     let g_srow = &g_sc[g_off_s + r * 16..g_off_s + (r + 1) * 16];
-                    let u_row = &u_q4[u_off_q + r * 1024..u_off_q + (r + 1) * 1024];
-                    let u_srow = &u_sc[u_off_s + r * 16..u_off_s + (r + 1) * 16];
-                    let gv = int4_row_swiglu(g_row, g_srow, u_row, u_srow, &xe, &xo, &xbias, x_sc, r);
-                    inter[r] = gv;
+                    let u_row = &u_q4[g_off_q + r * 1024..g_off_q + (r + 1) * 1024];
+                    let u_srow = &u_sc[g_off_s + r * 16..g_off_s + (r + 1) * 16];
+                    let gv = int4_dot_row(g_row, g_srow, &xe, &xo, &xbias, x_sc);
+                    let uv = int4_dot_row(u_row, u_srow, &xe, &xo, &xbias, x_sc);
+                    inter[r] = (gv / (1.0 + (-gv).exp())) * uv;
                 }
             });
 
-        // Down projection por expert.
         down_all
             .par_chunks_mut(HIDDEN)
             .enumerate()
@@ -782,11 +779,12 @@ impl SvidEngine {
                 let eid = top[ki].0;
                 let d_off_q = eid * HIDDEN * 704;
                 let d_off_s = eid * HIDDEN * 11;
-                let (ie, io, ibias, isc) = prepare_act_int4(&inter_all[ki * EXPERT_INTER..(ki + 1) * EXPERT_INTER]);
+                let (ie, io, ibias, isc) =
+                    prepare_act_int4(&inter_all[ki * EXPERT_INTER..(ki + 1) * EXPERT_INTER]);
                 for r in 0..HIDDEN {
                     let d_row = &d_q4[d_off_q + r * 704..d_off_q + (r + 1) * 704];
                     let d_srow = &d_sc[d_off_s + r * 11..d_off_s + (r + 1) * 11];
-                    down[r] = int4_row_down(d_row, d_srow, &ie, &io, &ibias, isc, r);
+                    down[r] = int4_dot_row(d_row, d_srow, &ie, &io, &ibias, isc);
                 }
             });
 

@@ -217,6 +217,87 @@ pub fn prepare_act_int4(x: &[f32]) -> (Vec<i8>, Vec<i8>, Vec<f32>, f32) {
     (x_even, x_odd, group_bias8, sc)
 }
 
+
+/// Multiplicacao matriz-vetor int8 com ativacoes f32 (sem quantizar a entrada).
+pub fn matvec_i8_f32(
+    x: &[f32],
+    q8: &[i8],
+    scale: &[f32],
+    m_rows: usize,
+    k_cols: usize,
+    out: &mut [f32],
+) {
+    assert!(out.len() >= m_rows, "matvec_f32: buffer de saida pequeno");
+    assert_eq!(q8.len(), m_rows * k_cols, "matvec_f32: pesos com tamanho divergente");
+    assert_eq!(scale.len(), m_rows, "matvec_f32: escala com tamanho divergente");
+    assert!(x.len() >= k_cols, "matvec_f32: entrada pequena");
+    let xs = &x[..k_cols];
+    out[..m_rows].par_iter_mut().enumerate().for_each(|(r, y)| {
+        let w = &q8[r * k_cols..(r + 1) * k_cols];
+        *y = dot_i8_f32(w, xs) * scale[r];
+    });
+}
+
+/// Produto interno int8 x f32 com acumulacao f32.
+#[inline]
+pub fn dot_i8_f32(w: &[i8], x: &[f32]) -> f32 {
+    assert_eq!(w.len(), x.len(), "dot_i8_f32: tamanhos divergentes");
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::env::var("MARK_NO_AVX2").is_err() && is_x86_feature_detected!("avx2") {
+            return unsafe { avx2_dot_i8_f32(w, x) };
+        }
+    }
+    let mut acc = 0.0f32;
+    for i in 0..w.len() {
+        acc += w[i] as f32 * x[i];
+    }
+    acc
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2", enable = "fma")]
+unsafe fn avx2_dot_i8_f32(w: &[i8], x: &[f32]) -> f32 {
+    use std::arch::x86_64::*;
+    let n = w.len();
+    let mut acc = _mm256_setzero_ps();
+    let mut i = 0usize;
+    while i + 8 <= n {
+        let wi = _mm256_cvtepi8_epi32(_mm_loadl_epi64(w.as_ptr().add(i) as *const __m128i));
+        let wf = _mm256_cvtepi32_ps(wi);
+        let xf = _mm256_loadu_ps(x.as_ptr().add(i));
+        acc = _mm256_fmadd_ps(wf, xf, acc);
+        i += 8;
+    }
+    let s4 = _mm_add_ps(_mm256_castps256_ps128(acc), _mm256_extractf128_ps(acc, 1));
+    let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+    let mut sum = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1)));
+    while i < n {
+        sum += w[i] as f32 * x[i];
+        i += 1;
+    }
+    sum
+}
+
+/// Produto interno int4 (nibble) com ativacao f32, igual ao kernel PTX da GPU.
+pub fn int4_dot_row_f32(packed: &[u8], scales: &[f32], x: &[f32]) -> f32 {
+    let g_cnt = scales.len();
+    let mut acc = 0.0f32;
+    for g in 0..g_cnt {
+        let off = g * 64;
+        let xb = g * 128;
+        let mut group_sum = 0.0f32;
+        for i in 0..64 {
+            let byte = packed[off + i];
+            let q_lo = ((byte & 0x0F) as f32) - 8.0;
+            let q_hi = ((byte >> 4) as f32) - 8.0;
+            group_sum += q_lo * x[xb + 2 * i] + q_hi * x[xb + 2 * i + 1];
+        }
+        acc += group_sum * scales[g];
+    }
+    acc
+}
+
 /// Dot product int4 (nibble) com escalas por grupo e correcao de vies.
 ///
 /// Cada nibble e lido sem deslocamento; o vies de grupo (`8 * soma(x)`) e

@@ -104,6 +104,20 @@ impl SafeTensors {
         Ok(Self { mmap, tensors })
     }
 
+
+    /// Le cada pagina do mmap para popular o page cache do sistema.
+    pub fn warm(&self) -> usize {
+        let ptr = self.mmap.as_ptr();
+        let len = self.mmap.len();
+        let mut acc = 0usize;
+        let mut i = 0usize;
+        while i < len {
+            acc = acc.wrapping_add(unsafe { *ptr.add(i) } as usize);
+            i += 4096;
+        }
+        acc
+    }
+
     /// Lista os nomes de todos os tensores.
     pub fn tensor_names(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self.tensors.keys().map(|s| s.as_str()).collect();

@@ -6,6 +6,7 @@
 pub mod config;
 pub mod error;
 pub mod fsutil;
+pub mod library;
 pub mod models;
 pub mod paths;
 pub mod store;
@@ -16,5 +17,6 @@ pub use config::{
 };
 pub use error::{CoreError, CoreResult};
 pub use models::{Backend, FitLevel, HardwareProfile, ModelEntry};
+pub use library::{DocMeta, Document, Library};
 pub use store::EncryptedStore;
 pub use vault::{EncryptedRecord, MasterKey, Vault, VaultHeader};

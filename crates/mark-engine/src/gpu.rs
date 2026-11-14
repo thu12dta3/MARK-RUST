@@ -82,14 +82,13 @@ fn load_symbol(handle: *mut c_void, name: &[u8]) -> Option<*mut c_void> {
 macro_rules! sym {
     ($handle:expr, $name:literal, $t:ty) => {{
         let p = load_symbol($handle, concat!($name, "\0").as_bytes())?;
-        unsafe { std::mem::transmute::<*mut c_void, $t>(p) }
+        std::mem::transmute::<*mut c_void, $t>(p)
     }};
 }
 
-fn load_module(handle: *mut c_void, ptx: &str) -> Option<(usize, usize, usize, usize, usize)> {
+unsafe fn load_module(handle: *mut c_void, ptx: &str) -> Option<(usize, usize, usize, usize, usize)> {
     let cu_mod_load: CuModuleLoadDataFn = sym!(handle, "cuModuleLoadData", CuModuleLoadDataFn);
-    let cu_mod_func: CuModuleGetFunctionFn =
-        sym!(handle, "cuModuleGetFunction", CuModuleGetFunctionFn);
+    let cu_mod_func: CuModuleGetFunctionFn = sym!(handle, "cuModuleGetFunction", CuModuleGetFunctionFn);
     let mut ptx_z: Vec<u8> = Vec::with_capacity(ptx.len() + 1);
     ptx_z.extend_from_slice(ptx.as_bytes());
     ptx_z.push(0);
@@ -112,7 +111,7 @@ fn load_module(handle: *mut c_void, ptx: &str) -> Option<(usize, usize, usize, u
     {
         let mut f: *mut c_void = ptr::null_mut();
         let cname = format!("{name}\0");
-        let rc = unsafe { cu_mod_func(&mut f, module, cname.as_ptr() as *const u8) };
+        let rc = unsafe { cu_mod_func(&mut f, module, cname.as_ptr()) };
         if rc == 0 && !f.is_null() {
             fns[i] = f as usize;
         }
@@ -379,6 +378,7 @@ impl GpuEngine {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn launch_i8_raw(
         &self,
         w: &GpuBuffer,
@@ -448,6 +448,7 @@ impl GpuEngine {
     }
 
     /// Projecoes q e kv_a em uma unica submissao.
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub fn matvec_q_kva(
         &self,
@@ -599,6 +600,7 @@ impl GpuEngine {
     }
 
     /// Camada linear W1A4 (LRD 1-bit) na GPU.
+    #[allow(clippy::too_many_arguments)]
     pub fn lrd_w1a4(
         &self,
         x: &[f32],

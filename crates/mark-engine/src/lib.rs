@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)]
 //! Fachada do motor de inferencia: escolhe o backend real conforme o modelo.
 
 pub mod gguf;

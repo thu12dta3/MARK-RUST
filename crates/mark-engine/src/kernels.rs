@@ -188,6 +188,7 @@ pub fn quantize_act_i8(x: &[f32]) -> (Vec<i8>, f32) {
 ///
 /// Separa os elementos em pares even/odd (quebecando o grupo de 128 em 64+64)
 /// e calcula o vies por grupo.
+#[allow(clippy::needless_range_loop)]
 pub fn prepare_act_int4(x: &[f32]) -> (Vec<i8>, Vec<i8>, Vec<f32>, f32) {
     assert_eq!(x.len() % 128, 0, "int4: comprimento precisa ser multiplo de 128");
     let mut amax = 1e-6f32;
@@ -302,6 +303,7 @@ pub fn int4_dot_row_f32(packed: &[u8], scales: &[f32], x: &[f32]) -> f32 {
 ///
 /// Cada nibble e lido sem deslocamento; o vies de grupo (`8 * soma(x)`) e
 /// subtraido no final, exatamente como no kernel AVX2 de referencia.
+#[allow(clippy::needless_range_loop)]
 pub fn int4_dot_row(
     packed: &[u8],
     scales: &[f32],
@@ -444,6 +446,7 @@ unsafe fn hsum_epi32(v: std::arch::x86_64::__m256i) -> i32 {
 }
 
 /// Dot product int4 empacotado por grupos de 128, com escalas por grupo.
+#[allow(clippy::needless_range_loop)]
 pub fn int4_group128_matvec_row(packed_row: &[u8], scales_row: &[f32], x: &[f32]) -> f32 {
     let k_dim = x.len();
     assert_eq!(k_dim % 128, 0, "int4: dimensao precisa ser multiplo de 128");

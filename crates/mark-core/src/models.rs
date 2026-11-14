@@ -201,14 +201,14 @@ fn cuda_probe() -> Option<(u64, String)> {
     type CuDeviceGetName = unsafe extern "C" fn(*mut libc::c_char, i32, i32) -> i32;
     type CuDeviceTotalMem = unsafe extern "C" fn(*mut usize, i32) -> i32;
     unsafe {
-        let handle = dlopen(b"libcuda.so.1\0".as_ptr() as *const libc::c_char, 1);
+        let handle = dlopen(c"libcuda.so.1".as_ptr(), 1);
         if handle.is_null() {
             return None;
         }
-        let p_init = dlsym(handle, b"cuInit\0".as_ptr() as *const libc::c_char);
-        let p_dev = dlsym(handle, b"cuDeviceGet\0".as_ptr() as *const libc::c_char);
-        let p_name = dlsym(handle, b"cuDeviceGetName\0".as_ptr() as *const libc::c_char);
-        let p_mem = dlsym(handle, b"cuDeviceTotalMem_v2\0".as_ptr() as *const libc::c_char);
+        let p_init = dlsym(handle, c"cuInit".as_ptr());
+        let p_dev = dlsym(handle, c"cuDeviceGet".as_ptr());
+        let p_name = dlsym(handle, c"cuDeviceGetName".as_ptr());
+        let p_mem = dlsym(handle, c"cuDeviceTotalMem_v2".as_ptr());
         if p_init.is_null() || p_dev.is_null() || p_name.is_null() || p_mem.is_null() {
             return None;
         }

@@ -15,6 +15,7 @@ pub struct HfRepo {
     #[serde(default)]
     pub downloads: Option<u64>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub likes: Option<u64>,
 }
 
@@ -92,7 +93,7 @@ pub async fn files(repo: &str) -> Result<Vec<HfFile>> {
     }
     let mut files: Vec<HfFile> = resp.json().await?;
     files.retain(|f| f.kind != "directory" && !f.path.is_empty());
-    files.sort_by(|a, b| b.size().cmp(&a.size()));
+    files.sort_by_key(|f| std::cmp::Reverse(f.size()));
     Ok(files)
 }
 

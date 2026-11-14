@@ -63,6 +63,7 @@ pub struct HfHit {
     #[serde(default)]
     pub downloads: u64,
     #[serde(default)]
+    #[allow(dead_code)]
     pub likes: u64,
 }
 
@@ -271,7 +272,7 @@ fn run(rx: Receiver<Job>, tx: Sender<Ev>, cancel: Arc<AtomicBool>) {
                 });
                 match res {
                     Ok(mut files) => {
-                        files.sort_by(|a, b| b.size.cmp(&a.size));
+                        files.sort_by_key(|f| std::cmp::Reverse(f.size));
                         let _ = tx.send(Ev::HfFiles(files));
                     }
                     Err(e) => {
@@ -313,6 +314,7 @@ fn urlencode(s: &str) -> String {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn download(
     client: &reqwest::Client,
     repo: &str,

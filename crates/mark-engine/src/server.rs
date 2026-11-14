@@ -37,8 +37,6 @@ struct ChatRequest {
     #[serde(default)]
     stream: bool,
     #[serde(default)]
-    temperature: Option<f32>,
-    #[serde(default)]
     max_tokens: Option<u32>,
 }
 
@@ -241,6 +239,13 @@ async fn handle(
                 return write_json(&mut stream, 400, &payload.to_string()).await;
             }
         };
+        if !req.model.is_empty() && req.model != model {
+            let payload = serde_json::json!({
+                "error": {"message": format!("modelo desconhecido: {} (servindo {model})", req.model)}
+            });
+            return write_json(&mut stream, 404, &payload.to_string()).await;
+        }
+        let limit = req.max_tokens.unwrap_or(0) as usize;
         let (system, prompt, turns) = split_messages(&req.messages);
         if prompt.trim().is_empty() {
             let payload = serde_json::json!({"error": {"message": "mensagem de usuario ausente"}});
@@ -272,6 +277,7 @@ async fn handle(
             stream.write_all(head.as_bytes()).await?;
             let engine2 = engine.clone();
             let model2 = model.clone();
+            let mut emitted = 0usize;
             tokio::spawn(async move {
                 let _ = generate_streaming(&engine2, &ctx, &prompt, cancel, tx).await;
             });
@@ -294,6 +300,10 @@ async fn handle(
                         };
                         let line = format!("data: {}\n\n", serde_json::to_string(&chunk)?);
                         if stream.write_all(line.as_bytes()).await.is_err() {
+                            break;
+                        }
+                        emitted += 1;
+                        if limit > 0 && emitted >= limit {
                             break;
                         }
                     }

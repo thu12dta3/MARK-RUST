@@ -971,6 +971,7 @@ impl Rng {
 
 /// Gate+Up int4 com SwiGLU para uma linha, usando ativacoes even/odd.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 fn int4_row_swiglu(
     g_row: &[u8],
     g_scales: &[f32],
@@ -990,6 +991,7 @@ fn int4_row_swiglu(
 
 /// Down projection int4 para uma linha.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 fn int4_row_down(
     d_row: &[u8],
     d_scales: &[f32],
@@ -1003,6 +1005,7 @@ fn int4_row_down(
 }
 
 /// Dot product int4 com ativacao pareada (even/odd), vies de grupo e despacho AVX2.
+#[allow(dead_code)]
 fn int4_row_dot(
     packed: &[u8],
     scales: &[f32],

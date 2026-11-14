@@ -20,7 +20,7 @@ use rayon::prelude::*;
 
 use crate::gpu::{GpuBuffer, GpuEngine, GpuExperts};
 use crate::kernels::{
-    homeostatic_residual_add_inplace, int4_dot_row, int4_dot_row_f32, int8_matvec, matvec_i8_f32,
+    homeostatic_residual_add_inplace, int4_dot_row, int4_dot_row_f32, matvec_i8_f32,
     prepare_act_int4, quantize_act_i8, rmsnorm_into, svid_1bit_linear_subspace_w1a4,
     swiglu_inplace, YarnRopeCache,
 };
@@ -437,7 +437,7 @@ impl SvidEngine {
                     &mut kva_buf,
                 )?;
             } else {
-                int8_matvec(
+                matvec_i8_f32(
                     &xn,
                     &lw.q_q8,
                     &lw.q_scale,
@@ -445,7 +445,7 @@ impl SvidEngine {
                     HIDDEN,
                     &mut q_buf,
                 );
-                int8_matvec(
+                matvec_i8_f32(
                     &xn,
                     &lw.kva_q8,
                     &lw.kva_scale,
@@ -474,7 +474,7 @@ impl SvidEngine {
                 g.engine
                     .matvec_i8(&c_kv, &gl.kvb_q8, &gl.kvb_sc, None, N_HEADS * (NOPE_DIM + NOPE_DIM), C_KV, &mut kvb_buf)?;
             } else {
-                int8_matvec(
+                matvec_i8_f32(
                     &c_kv,
                     &lw.kvb_q8,
                     &lw.kvb_scale,
@@ -538,7 +538,7 @@ impl SvidEngine {
                 g.engine
                     .matvec_i8(&ctx_buf, &gl.o_q8, &gl.o_sc, None, HIDDEN, HIDDEN, &mut attn_out)?;
             } else {
-                int8_matvec(&ctx_buf, &lw.o_q8, &lw.o_scale, HIDDEN, HIDDEN, &mut attn_out);
+                matvec_i8_f32(&ctx_buf, &lw.o_q8, &lw.o_scale, HIDDEN, HIDDEN, &mut attn_out);
             }
             homeostatic_residual_add_inplace(&mut h, &attn_out, 1.8);
 
@@ -563,10 +563,10 @@ impl SvidEngine {
                 } else {
                     let mut g0 = vec![0.0f32; inter];
                     let mut u0 = vec![0.0f32; inter];
-                    int8_matvec(&xn, &lw.mlp_gate_q8, &lw.mlp_gate_scale, inter, HIDDEN, &mut g0);
-                    int8_matvec(&xn, &lw.mlp_up_q8, &lw.mlp_up_scale, inter, HIDDEN, &mut u0);
+                    matvec_i8_f32(&xn, &lw.mlp_gate_q8, &lw.mlp_gate_scale, inter, HIDDEN, &mut g0);
+                    matvec_i8_f32(&xn, &lw.mlp_up_q8, &lw.mlp_up_scale, inter, HIDDEN, &mut u0);
                     swiglu_inplace(&mut g0, &u0);
-                    int8_matvec(
+                    matvec_i8_f32(
                         &g0,
                         &lw.mlp_down_q8,
                         &lw.mlp_down_scale,
@@ -625,7 +625,7 @@ impl SvidEngine {
                 } else {
                     let mut sh_g = vec![0.0f32; SHARED_INTER];
                     let mut sh_u = vec![0.0f32; SHARED_INTER];
-                    int8_matvec(
+                    matvec_i8_f32(
                         &xn,
                         &lw.mlp_gate_q8,
                         &lw.mlp_gate_scale,
@@ -633,7 +633,7 @@ impl SvidEngine {
                         HIDDEN,
                         &mut sh_g,
                     );
-                    int8_matvec(
+                    matvec_i8_f32(
                         &xn,
                         &lw.mlp_up_q8,
                         &lw.mlp_up_scale,
@@ -642,7 +642,7 @@ impl SvidEngine {
                         &mut sh_u,
                     );
                     swiglu_inplace(&mut sh_g, &mut sh_u);
-                    int8_matvec(
+                    matvec_i8_f32(
                         &sh_g,
                         &lw.mlp_down_q8,
                         &lw.mlp_down_scale,
@@ -706,14 +706,13 @@ impl SvidEngine {
                 &mut logits,
             )?;
         } else {
-            let (x_i8, x_sc) = quantize_act_i8(&xn);
             logits.par_iter_mut().enumerate().for_each(|(r, y)| {
                 if self.cjk_mask[r] != 0 {
                     *y = -1e9;
                     return;
                 }
                 let w = &self.lm_q8[r * HIDDEN..(r + 1) * HIDDEN];
-                *y = (crate::kernels::dot_i8(w, &x_i8) as f32) * self.lm_scale[r] * x_sc;
+                *y = crate::kernels::dot_i8_f32(w, &xn) * self.lm_scale[r];
             });
         }
 

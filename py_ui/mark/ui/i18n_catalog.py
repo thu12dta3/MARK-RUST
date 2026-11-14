@@ -380,14 +380,6 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
     ),
     "Parar escuta": ("Stop listening", "Parar escuta", "停止聆听", "सुनना बंद करें", "Detener escucha", "Arrêter l'écoute", "إيقاف الاستماع"),
     "Iniciar escuta": ("Start listening", "Iniciar escuta", "开始聆听", "सुनना शुरू करें", "Iniciar escucha", "Démarrer l'écoute", "بدء الاستماع"),
-    "Raciocínio Instantâneo ": ("Instant Reasoning ", "Raciocínio Instantâneo ", "即时推理 ", "तात्कालिक तर्क ", "Razonamiento instantáneo ", "Raisonnement instantané ", "استدلال فوري "),
-    "Deep Reasoning": ("Deep Reasoning", "Raciocínio Profundo", "深度推理", "गहन तर्क", "Razonamiento profundo", "Raisonnement approfondi", "استدلال عميق"),
-    "Você": ("You", "Você", "你", "आप", "Tú", "Vous", "أنت"),
-    "Vision": ("Vision", "Visão", "视觉", "विज़न", "Visión", "Vision", "الرؤية"),
-    "Falha no Processamento": (
-        "Processing failed", "Falha no Processamento", "处理失败", "प्रसंस्करण विफल",
-        "Fallo en el procesamiento", "Échec du traitement", "فشل المعالجة",
-    ),
     "Tentar Novamente": (
         "Try Again", "Tentar Novamente", "重试", "पुनः प्रयास करें", "Reintentar", "Réessayer",
         "إعادة المحاولة",
@@ -420,5 +412,43 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
     "Generation cancelled": (
         "Generation cancelled", "Geração cancelada", "生成已取消", "जनरेशन रद्द",
         "Generación cancelada", "Génération annulée", "تم إلغاء التوليد",
+    ),
+
+    'Cogitating...': (
+        'Cogitating...', 'Cogitando...', '沉思中...', 'विचार कर रहा है...', 'Cogitando...', 'Cogitation...', 'يفكّر...',
+    ),
+    'Untangling the AST...': (
+        'Untangling the AST...', 'Desembaraçando a AST...', '梳理抽象语法树...', 'AST सुलझा रहा है...', 'Desenredando el AST...', "Démêlage de l'AST...", 'يفكّ شجرة التركيب...',
+    ),
+    'Reticulating tensors...': (
+        'Reticulating tensors...', 'Reticulando tensores...', '编织张量...', 'टेंसर जोड़ रहा है...', 'Reticulando tensores...', 'Réticulation des tenseurs...', 'يرابط الموترات...',
+    ),
+    'Aligning attention heads...': (
+        'Aligning attention heads...', 'Alinhando cabeças de atenção...', '对齐注意力头...', 'अटेंशन हेड संरेखित कर रहा है...', 'Alineando cabezas de atención...', "Alignement des têtes d'attention...", 'يحاذي رؤوس الانتباه...',
+    ),
+    'Consulting neural weights...': (
+        'Consulting neural weights...', 'Consultando os pesos neurais...', '查询神经权重...', 'न्यूरल वेट देख रहा है...', 'Consultando los pesos neuronales...', 'Consultation des poids neuronaux...', 'يستشير الأوزان العصبية...',
+    ),
+    'Traversing latent space...': (
+        'Traversing latent space...', 'Percorrendo o espaço latente...', '穿越潜在空间...', 'अव्यक्त स्थान में भ्रमण...', 'Recorriendo el espacio latente...', "Traversée de l'espace latent...", 'يجتاز الفضاء الكامن...',
+    ),
+    'Compiling thoughts...': (
+        'Compiling thoughts...', 'Compilando pensamentos...', '编译思路...', 'विचार संकलित कर रहा है...', 'Compilando pensamientos...', 'Compilation des pensées...', 'يُجمّع الأفكار...',
+    ),
+    'Synthesizing tokens...': (
+        'Synthesizing tokens...', 'Sintetizando tokens...', '合成词元...', 'टोकन संश्लेषित कर रहा है...', 'Sintetizando tokens...', 'Synthèse des jetons...', 'يُولّف الرموز...',
+    ),
+    "Architecture Graph · Graphify": (
+        "Architecture Graph · Graphify", "Grafo de Arquitetura · Graphify", "架构图 · Graphify",
+        "आर्किटेक्चर ग्राफ़ · Graphify", "Grafo de arquitectura · Graphify",
+        "Graphe d'architecture · Graphify", "مخطط البنية · Graphify",
+    ),
+    "The architecture graph has not been generated yet:": (
+        "The architecture graph has not been generated yet:",
+        "O grafo de arquitetura ainda nao foi gerado:",
+        "架构图尚未生成：", "आर्किटेक्चर ग्राफ़ अभी नहीं बना:",
+        "El grafo de arquitectura aún no se ha generado:",
+        "Le graphe d'architecture n'a pas encore été généré :",
+        "لم يتم إنشاء مخطط البنية بعد:",
     ),
 }

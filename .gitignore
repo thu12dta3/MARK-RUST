@@ -22,3 +22,5 @@ py_ui/mark/*.so
 
 __pycache__/
 *.pyc
+
+graphify-out/

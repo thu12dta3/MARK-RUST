@@ -22,7 +22,6 @@ def main() -> int:
     t_import = time.perf_counter() - T0
     window = MainWindow()
     t_ctor = time.perf_counter() - T0
-    window.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
     window.resize(1600, 900)
     window.show()
     t_show = time.perf_counter() - T0

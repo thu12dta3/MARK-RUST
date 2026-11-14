@@ -223,6 +223,8 @@ class ChatMixin:
                 self.send_button.setText("\u2191")
             self.attach_button.setDisabled(False)
             self.connection_label.setText(tr("Generation cancelled"))
+            if hasattr(self, "_stop_thinking_rotator"):
+                self._stop_thinking_rotator()
         except RuntimeError:
             pass
 
@@ -307,6 +309,8 @@ class ChatMixin:
         self.send_button.setIcon(QIcon())
         self.send_button.setText("\u25A0")
         self.connection_label.setText(tr("MARK está pensando..."))
+        if hasattr(self, "_start_thinking_rotator"):
+            self._start_thinking_rotator()
         if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
             self.thinking_indicator.start()
         specialization = self.current_specialization

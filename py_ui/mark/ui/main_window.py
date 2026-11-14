@@ -363,7 +363,6 @@ class MainWindow(
     QTimer.singleShot(1200, self.refresh_status)
 
   def _build_ui(self) -> None:
-    self.setStyleSheet(ThemeManager.get_stylesheet())
 
     root_container = QWidget()
     root_container.setObjectName("appRoot")
@@ -994,6 +993,53 @@ class MainWindow(
       palette.close()
       return
     self.open_command_palette()
+
+  THINKING_KEYS = (
+    "Cogitating...", "Untangling the AST...", "Reticulating tensors...",
+    "Aligning attention heads...", "Consulting neural weights...",
+    "Traversing latent space...", "Compiling thoughts...", "Synthesizing tokens...",
+  )
+
+  def _start_thinking_rotator(self) -> None:
+    """Rotaciona frases de pensamento (i18n, sem emojis) enquanto busy."""
+    if getattr(self, "_thinking_timer", None) is None:
+      self._thinking_index = 0
+      self._thinking_timer = QTimer(self)
+      self._thinking_timer.timeout.connect(self._rotate_thinking)
+    self._thinking_index = 0
+    self._rotate_thinking()
+    self._thinking_timer.start(2200)
+
+  def _rotate_thinking(self) -> None:
+    if not getattr(self, "busy", False):
+      self._stop_thinking_rotator()
+      return
+    key = self.THINKING_KEYS[self._thinking_index % len(self.THINKING_KEYS)]
+    self._thinking_index += 1
+    text = tr(key)
+    try:
+      self.connection_label.setText(text)
+      if hasattr(self, "engineer_work_label"):
+        self.engineer_work_label.setText(text)
+    except RuntimeError:
+      self._stop_thinking_rotator()
+
+  def _stop_thinking_rotator(self) -> None:
+    timer = getattr(self, "_thinking_timer", None)
+    if timer is not None:
+      timer.stop()
+
+  def _lock_mode_selectors(self, specialization: str) -> None:
+    """No Engineer, engine e modelo ficam travados no backend fixo."""
+    locked = specialization == "engineer"
+    for widget, reason in (
+      (getattr(self, "engine_button", None), tr("Engineer uses the fixed Rust engine")),
+      (getattr(self, "model_selector", None), tr("Engineer uses its own model profile")),
+    ):
+      if widget is None:
+        continue
+      widget.setEnabled(not locked)
+      widget.setToolTip(reason if locked else "")
 
   def _install_shortcuts(self) -> None:
     """Instala F11 (tela cheia) e Esc (Command Palette)."""
@@ -1832,29 +1878,30 @@ class MainWindow(
   # -------------------------------------------------------------------------
   def _setup_command_palette(self) -> None:
     cp = self.command_palette
-    cp.add_category_header(tr("--- SEGURANÇA E AGENTES ---"))
-    cp.register_command(tr("Antivírus e ameaças · Sentinel"), self.open_sentinel, "Segurança")
-    cp.register_command(tr("Dispositivos e segurança"), self.open_mobile_devices, "Segurança")
+    cp.add_category_header("--- SEGURANÇA E AGENTES ---")
+    cp.register_command("Antivírus e ameaças · Sentinel", self.open_sentinel, "Segurança")
+    cp.register_command("Dispositivos e segurança", self.open_mobile_devices, "Segurança")
 
-    cp.add_category_header(tr("--- ENGENHARIA E CÓDIGO ---"))
-    cp.register_command(tr("Tarefas do Engineer"), self.open_missions, "Engenharia")
-    cp.register_command(tr("Engenharia Autônoma · Sandbox"), self.run_autonomous_engineering, "Engenharia")
-    cp.register_command(tr("Código · GitHub"), self.open_github, "Engenharia")
+    cp.add_category_header("--- ENGENHARIA E CÓDIGO ---")
+    cp.register_command("Tarefas do Engineer", self.open_missions, "Engenharia")
+    cp.register_command("Engenharia Autônoma · Sandbox", self.run_autonomous_engineering, "Engenharia")
+    cp.register_command("Código · GitHub", self.open_github, "Engenharia")
 
-    cp.add_category_header(tr("--- UTILITÁRIOS E MÍDIA ---"))
-    cp.register_command(tr("Agenda e lembretes"), self.open_agenda, "Utilitários")
-    cp.register_command(tr("E-mail · Tuta"), self.open_email_composer, "Utilitários")
-    cp.register_command(tr("Visão ao vivo / Câmera"), self.open_vision, "Utilitários")
-    cp.register_command(tr("Alternar escuta por voz"), self.toggle_voice, "Utilitários")
+    cp.add_category_header("--- UTILITÁRIOS E MÍDIA ---")
+    cp.register_command("Agenda e lembretes", self.open_agenda, "Utilitários")
+    cp.register_command("E-mail · Tuta", self.open_email_composer, "Utilitários")
+    cp.register_command("Visão ao vivo / Câmera", self.open_vision, "Utilitários")
+    cp.register_command("Alternar escuta por voz", self.toggle_voice, "Utilitários")
 
-    cp.add_category_header(tr("--- SISTEMA ---"))
+    cp.add_category_header("--- SISTEMA ---")
     cp.register_command("Configurações", self.open_settings, "Sistema")
-    cp.register_command(tr("Chamada de Voz"), self.open_call, "Sistema")
-    cp.register_command(tr("Biblioteca de Memórias"), self.open_library, "Sistema")
+    cp.register_command("Chamada de Voz", self.open_call, "Sistema")
+    cp.register_command("Biblioteca de Memórias", self.open_library, "Sistema")
     cp.register_command("Evolução do MARK", self.open_evolution, "Sistema")
-    cp.register_command(tr("Plugins..."), self.open_plugins, "Sistema")
-    cp.register_command(tr("Iniciar MARK"), self.start_mark, "Sistema")
-    cp.register_command(tr("Limpar conversa"), self.clear_memory, "Sistema")
+    cp.register_command("Plugins...", self.open_plugins, "Sistema")
+    cp.register_command("Iniciar MARK", self.start_mark, "Sistema")
+    cp.register_command("Architecture Graph · Graphify", self.open_architecture_graph, "Sistema")
+    cp.register_command("Limpar conversa", self.clear_memory, "Sistema")
 
   def _setup_tools_menu(self) -> None:
     self.tools_menu = QMenu(self.tools_button)
@@ -1932,7 +1979,19 @@ class MainWindow(
     return box
 
   def _set_style(self) -> None:
-    self.setStyleSheet(ThemeManager.get_stylesheet())
+    """Aplica o QSS uma vez na aplicacao (re-polish global e muito mais rapido)."""
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    stylesheet = ThemeManager.get_stylesheet()
+    if app is not None:
+      if not app.property("mark_global_qss"):
+        app.setStyleSheet(stylesheet)
+        app.setProperty("mark_global_qss", True)
+      self.setStyleSheet("")
+      return
+    if self.styleSheet() != stylesheet:
+      self.setStyleSheet(stylesheet)
 
   def _scroll_to_latest(self) -> None:
     if self.follow_latest and hasattr(self, "scroll") and hasattr(self, "chat_layout"):
@@ -2464,6 +2523,22 @@ class MainWindow(
       self.library_page = LibraryPage(self, Path(cfg.get("cognition", {}).get("knowledge_db", str(DEFAULT_DB))))
       self.page_stack.addWidget(self.library_page)
     self.page_stack.setCurrentWidget(self.library_page)
+
+  def open_architecture_graph(self) -> None:
+    """Abre graphify-out/graph.html no navegador padrao (ou informa o caminho)."""
+    import subprocess as _sp
+    from pathlib import Path as _P
+
+    root = _P(__file__).resolve().parents[3]
+    graph = root / "graphify-out" / "graph.html"
+    if graph.is_file():
+      try:
+        _sp.Popen(["xdg-open", str(graph)], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+      except OSError:
+        pass
+      self.connection_label.setText(str(graph))
+      return
+    self.connection_label.setText(tr("The architecture graph has not been generated yet:") + " " + str(graph))
 
   def open_sentinel(self) -> None:
     from .sentinel_panel import SentinelDialog

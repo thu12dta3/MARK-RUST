@@ -289,6 +289,8 @@ class NavigationMixin:
             self.engineer_bar.setVisible(specialization == "engineer" and empty_chat)
         if hasattr(self, "_apply_role_selection"):
             self._apply_role_selection(specialization)
+        if hasattr(self, "_lock_mode_selectors"):
+            self._lock_mode_selectors(specialization)
         if hasattr(self, "_update_mode_empty_state"):
             self._update_mode_empty_state(specialization)
         if hasattr(self, "professor_panel"):

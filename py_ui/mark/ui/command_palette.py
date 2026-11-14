@@ -113,7 +113,7 @@ class CommandPaletteDialog(QDialog):
         self._items_meta.append({"title": title, "category": category, "is_header": False})
 
     def add_category_header(self, header: str) -> None:
-        """Adiciona um cabecalho estilizado de separacao de categoria."""
+        """Adiciona um cabecalho de categoria (guarda a chave, traduz no populate)."""
         self._items_meta.append({"title": header, "category": header, "is_header": True})
 
     def retranslate(self) -> None:
@@ -131,10 +131,11 @@ class CommandPaletteDialog(QDialog):
         t = ThemeManager.TOKENS
 
         for meta in self._items_meta:
-            title = meta["title"]
+            title = tr(meta["title"])
             is_header = meta["is_header"]
 
             item = QListWidgetItem(title)
+            item.setData(Qt.ItemDataRole.UserRole, meta["title"])
             if is_header:
                 item.setFlags(Qt.ItemFlag.NoItemFlags)
                 item.setForeground(Qt.GlobalColor.darkGray)
@@ -171,8 +172,8 @@ class CommandPaletteDialog(QDialog):
         self._select_first_valid()
 
     def _on_item_activated(self, item: QListWidgetItem) -> None:
-        text = item.text()
-        callback = self._actions_map.get(text)
+        key = item.data(Qt.ItemDataRole.UserRole) or item.text()
+        callback = self._actions_map.get(key) or self._actions_map.get(item.text())
         if callback:
             self.accept()
             callback()

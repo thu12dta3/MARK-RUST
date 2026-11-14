@@ -13,7 +13,7 @@ PY_UI = Path(__file__).resolve().parent
 if str(PY_UI) not in sys.path:
     sys.path.insert(0, str(PY_UI))
 
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget
 
 OUT = Path(__file__).resolve().parent.parent
 SIZE = (1280, 850)
@@ -64,6 +64,26 @@ def main() -> int:
     tabs.setCurrentIndex(vault_index)
     pump(app, 25)
     print(grab(app, window, "fixed_2_vault_rust.png"))
+
+    from PyQt6.QtWidgets import QGroupBox
+
+    vault_tab = tabs.widget(vault_index)
+    boxes = vault_tab.findChildren(QGroupBox)
+    print("VAULT_GROUPS:", [box.title() for box in boxes])
+    hidden: list[QGroupBox] = []
+    for box in boxes:
+        title = box.title().lower()
+        if title in ("master password", "create master password", "unlock vault",
+                     "keys stored in the vault", "add or update a key", "storage and memory"):
+            box.setVisible(False)
+            hidden.append(box)
+    pump(app, 20)
+    modes = [box.title() for box in boxes if box.isVisibleTo(window)]
+    print("PASSWORD_MODES_VISIBLE:", modes)
+    print(grab(app, window, "fixed_2b_vault_password_modes.png"))
+    for box in hidden:
+        box.setVisible(True)
+    pump(app, 12)
 
     tabs.setCurrentIndex(tabs.count() - 1)
     pump(app, 20)

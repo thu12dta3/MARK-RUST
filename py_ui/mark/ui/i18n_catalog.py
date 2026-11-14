@@ -382,4 +382,5 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
     "Iniciar escuta": ("Start listening", "Iniciar escuta", "开始聆听", "सुनना शुरू करें", "Iniciar escucha", "Démarrer l'écoute", "بدء الاستماع"),
     "Raciocínio Instantâneo ": ("Instant Reasoning ", "Raciocínio Instantâneo ", "即时推理 ", "तात्कालिक तर्क ", "Razonamiento instantáneo ", "Raisonnement instantané ", "استدلال فوري "),
     "Deep Reasoning": ("Deep Reasoning", "Raciocínio Profundo", "深度推理", "गहन तर्क", "Razonamiento profundo", "Raisonnement approfondi", "استدلال عميق"),
+    "Você": ("You", "Você", "你", "आप", "Tú", "Vous", "أنت"),
 }

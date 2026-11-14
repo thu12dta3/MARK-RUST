@@ -102,7 +102,7 @@ class MessageBubbleWidget(QFrame):
         # Identificacao Discreta: Remetente/hora em texto secundario fino sans-serif apenas para o usuario
         if is_user:
             orig = source_label(self.source)
-            sender_title = "Você" if not orig else f"Você · {orig}"
+            sender_title = tr("Você") if not orig else f"{tr('Você')} · {orig}"
             self.who = QLabel(sender_title)
             self.who.setObjectName("messageSender")
             self.who.setStyleSheet(

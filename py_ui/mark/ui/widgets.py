@@ -546,7 +546,7 @@ class ProviderSelectorWidget(QComboBox):
     self._apply_discovered_models([m for m in ollama_models if not is_banned_model(m)], cloud_provs)
 
   def _pin_local_mark_model(self) -> None:
-    """Mantem o Mark-Bin-32B no topo mesmo depois de uma varredura do Ollama."""
+    """Mantem o Mark-Bin-32B no topo com metadados alinhados em _models_meta."""
     for index in range(self.count()):
       if "Mark-Bin-32B" in self.itemText(index):
         return
@@ -558,33 +558,25 @@ class ProviderSelectorWidget(QComboBox):
     except Exception:
       return
     self.insertItem(0, "Mark-Bin-32B (1-Bit W1A4, 2M context)", "mark")
+    meta = {
+      "name": "Mark-Bin-32B",
+      "id": "mark-bin-32b",
+      "type": "Local Rust",
+      "provider": "mark-rust-1bit",
+      "enabled": True,
+    }
+    if not isinstance(getattr(self, "_models_meta", None), list):
+      self._models_meta = []
+    self._models_meta.insert(0, meta)
 
   def _format_local_model_name(self, tag: str) -> str:
-    """Formata o nome de exibicao amigavel de um modelo Ollama baixado garantindo o nome completo."""
-    lower = tag.lower()
-    if "302m" in lower or "300m" in lower:
-      return f"Mark Engineer 300M ({tag})"
-    if "mark-engineer" in lower:
-      return f"Mark Engineer 1.5B ({tag})"
-    if "mark-general" in lower:
-      return f"Mark General 1.5B ({tag})"
-    if "mark-vl" in lower:
-      return f"MarkVL 2.2B ({tag})"
-    if "qwen2.5-coder-32b" in lower:
-      return f"Qwen 2.5 Coder 32B ({tag})"
-    if "qwen2.5-coder-7b" in lower or ("qwen2.5-coder" in lower and "7b" in lower):
-      return f"Qwen 2.5 Coder 7B ({tag})"
-    if "qwen2.5-coder" in lower:
-      return f"Qwen 2.5 Coder ({tag})"
-    if "qwen3-vl" in lower:
-      return f"Qwen3 VL ({tag})"
-    if "llama-3.3" in lower:
-      return f"Llama 3.3 ({tag})"
-    if "llama3" in lower:
-      return f"Llama 3 ({tag})"
-    if "deepseek" in lower:
-      return f"DeepSeek ({tag})"
-    return tag
+    """Rotulo humano do modelo local a partir da tag do Ollama."""
+    clean = str(tag or "").strip()
+    if not clean:
+      return ""
+    stem = clean.split(":")[0]
+    pretty = stem.replace("_", " ").replace("-", " ").title().strip()
+    return f"{pretty} ({clean})"
 
   def _format_cloud_model_name(self, provider: str, model_id: str) -> str:
     """Formata o nome exato do modelo de nuvem configurado."""
@@ -747,7 +739,6 @@ class ProviderSelectorWidget(QComboBox):
       self.view().setMinimumWidth(max(max_item_w, self.minimumWidth()))
     self._update_badge()
     self._pin_local_mark_model()
-
   def _on_index_changed(self, index: int) -> None:
     self._persist_current_selection(index)
     self.adjustSize()
@@ -826,10 +817,15 @@ class ProviderSelectorWidget(QComboBox):
     return ""
 
   def processing_type(self) -> str:
+    if str(self.currentData() or "") == "mark":
+      return "Local Rust"
     idx = self.currentIndex()
     if 0 <= idx < len(self._models_meta):
-      return self._models_meta[idx]["type"]
-    return "Local Ollama" if "Local" in self.currentText() else "Nuvem"
+      meta = self._models_meta[idx]
+      if meta.get("provider") == "mark-rust-1bit":
+        return "Local Rust"
+      return str(meta.get("type") or "Local Ollama")
+    return "Local Ollama" if "Local" in self.currentText() else "Local Rust"
 
   def select_model_by_name(self, name: str) -> bool:
     name_lower = name.lower()

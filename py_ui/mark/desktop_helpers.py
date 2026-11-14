@@ -215,6 +215,43 @@ def _token() -> str:
     return value
 
 
+ENGINE_STATE: dict[str, object] = {"engine": "rust", "port": 8931}
+
+
+def set_active_engine(engine: str, port: int = 8931) -> None:
+    """Define o motor local que recebe as proximas requisicoes de chat."""
+    ENGINE_STATE["engine"] = engine or "rust"
+    ENGINE_STATE["port"] = int(port)
+
+
+def _engine_base() -> str:
+    """Resolve a base URL real do motor escolhido, subindo o mark-server se preciso."""
+    engine = str(ENGINE_STATE.get("engine") or "rust")
+    port = int(ENGINE_STATE.get("port") or 8931)
+    if engine == "rust":
+        from .rust_bridge import rust
+
+        status = rust.server_status()
+        if not status.get("running"):
+            started = rust.server_start(port)
+            if not started.get("ok"):
+                raise RuntimeError(f"mark-server nao subiu: {started.get('message')}")
+        return f"http://127.0.0.1:{port}"
+    if engine == "ollama":
+        return "http://127.0.0.1:11434"
+    if engine == "llamacpp":
+        base = os.environ.get("MARK_LLAMACPP_URL", "http://127.0.0.1:8080")
+        try:
+            with urllib.request.urlopen(base + "/health", timeout=2):
+                return base
+        except (urllib.error.URLError, OSError) as exc:
+            raise RuntimeError(
+                "llama-server nao esta respondendo em "
+                f"{base}; inicie o binario llama.cpp para modelos .gguf ({exc})"
+            ) from exc
+    return API
+
+
 def _request(path: str, payload: dict | None = None, timeout: int = 240):
     try:
         token = _token()
@@ -227,7 +264,10 @@ def _request(path: str, payload: dict | None = None, timeout: int = 240):
     if payload is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(API + path, data=data, headers=headers)
+    base = API
+    if path.startswith("/v1/chat/completions") or path.startswith("/v1/completions"):
+        base = _engine_base()
+    request = urllib.request.Request(base.rstrip("/") + path, data=data, headers=headers)
     validate_url_scheme(request)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec: B310

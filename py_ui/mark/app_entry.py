@@ -48,6 +48,8 @@ def main() -> int:
     window = MainWindow()
     window.resize(1280, 850)
     window.show()
+    if hasattr(window, "shutdown"):
+        app.aboutToQuit.connect(window.shutdown)
     return app.exec()
 
 

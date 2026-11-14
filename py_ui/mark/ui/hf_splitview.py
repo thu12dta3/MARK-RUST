@@ -555,6 +555,18 @@ class HFSplitView(QWidget):
     row.addWidget(button)
     return card
 
+  # --------------------------------------------------------------- shutdown
+  def shutdown(self) -> None:
+    """Encerra as threads do split view antes do fechamento da aplicacao."""
+    for name in ("_search_worker", "_details_worker", "_download_worker"):
+      worker = getattr(self, name, None)
+      if worker is not None and worker.isRunning():
+        try:
+          worker.quit()
+          worker.wait(2500)
+        except RuntimeError:
+          pass
+
   # --------------------------------------------------------------- download
   def start_download(self, filename: str) -> None:
     if self._download_worker is not None and self._download_worker.isRunning():

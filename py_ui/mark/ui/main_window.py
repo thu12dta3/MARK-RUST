@@ -711,6 +711,8 @@ class MainWindow(
     self._ctx_timer = QTimer(self)
     self._ctx_timer.timeout.connect(self._update_ctx_label)
     self._ctx_timer.start(1500)
+    from .perf import defer as _defer
+    _defer(self._install_attachment_bridge)
     self._frame_ms = frame_interval_ms()
     start_background_caches()
     self.setWindowTitle("MARK")
@@ -920,20 +922,19 @@ class MainWindow(
       )
 
   def _ensure_local_mark_model(self) -> None:
-    """Coloca o Mark-Bin-32B nativo no seletor quando o checkpoint existe."""
-    try:
-      from ..rust_bridge import rust as _rust
-    except ImportError:
+    """Delega o pin do Mark-Bin-32B ao seletor (que mantem _models_meta alinhado)."""
+    selector = getattr(self, "model_selector", None)
+    if selector is None or not hasattr(selector, "_pin_local_mark_model"):
       return
-    if not hasattr(self, "model_selector"):
-      return
-    if any("Mark-Bin-32B" in self.model_selector.itemText(i) for i in range(self.model_selector.count())):
-      return
-    status = _rust.engine_status()
-    if not status.get("checkpoint"):
-      return
-    self.model_selector.insertItem(0, "Mark-Bin-32B (1-Bit W1A4, 2M context)", "mark")
-    self.model_selector.setCurrentIndex(0)
+    selector.blockSignals(True)
+    selector._pin_local_mark_model()
+    if getattr(self, "active_engine", "rust") == "rust" and selector.count():
+      selector.setCurrentIndex(0)
+    selector.blockSignals(False)
+    if hasattr(self, "ctx_status_label"):
+      self._update_ctx_label()
+    if hasattr(self, "routing_target_badge"):
+      self._update_routing_target_badge()
 
   def _install_prompt_augmentation(self) -> None:
     """Anexa hardware do PC e diretrizes de modo ao system prompt real."""
@@ -968,6 +969,112 @@ class MainWindow(
     self.input.setPlainText(prompt)
     self._append_bubble(prompt, "user", None, auto_scroll=True)
     self.send_message()
+
+  def shutdown(self) -> None:
+    """Para threads, timers e o servidor Rust antes de fechar a janela."""
+    for timer_name in ("_ctx_timer", "history_timer"):
+      timer = getattr(self, timer_name, None)
+      if timer is not None:
+        try:
+          timer.stop()
+        except RuntimeError:
+          pass
+    settings_widget = getattr(self, "settings_widget", None)
+    hub = getattr(settings_widget, "hf_view", None)
+    if hub is None:
+      tabs = getattr(settings_widget, "tab_widget", None)
+      if tabs is not None and tabs.count():
+        page = tabs.widget(tabs.count() - 1)
+        hub = getattr(page, "hf_view", None)
+    if hub is not None and hasattr(hub, "shutdown"):
+      hub.shutdown()
+    bar = getattr(self, "engineer_bar", None)
+    worker = getattr(bar, "_worker", None)
+    if worker is not None and worker.isRunning():
+      worker.quit()
+      worker.wait(2000)
+    try:
+      from ..rust_bridge import rust
+
+      rust.server_stop()
+    except Exception:
+      pass
+
+    for worker in list(getattr(self, "tasks", set())):
+      try:
+        if worker.isRunning():
+          worker.quit()
+          worker.wait(2500)
+      except RuntimeError:
+        continue
+    self.tasks.clear()
+
+  def _install_attachment_bridge(self) -> None:
+    """Liga a lista de anexos reais aos chips com miniatura do composer."""
+    if getattr(self, "_attachment_bridge_ready", False):
+      return
+    self._attachment_bridge_ready = True
+    original = getattr(self, "_add_attachment_paths", None)
+    if callable(original):
+      def _wrapped(paths, _original=original):
+        _original(paths)
+        self._sync_attachment_chips()
+      self._add_attachment_paths = _wrapped
+    self._sync_attachment_chips()
+
+  def _sync_attachment_chips(self) -> None:
+    """Miniaturas 36x36 com nome e botao de remover acima do campo de texto."""
+    from PyQt6.QtGui import QPixmap
+
+    row = getattr(self, "attachment_chips", None)
+    if row is None:
+      return
+    while row.count():
+      item = row.takeAt(0)
+      widget = item.widget()
+      if widget is not None:
+        widget.deleteLater()
+    paths = list(getattr(self, "attachments", []) or [])
+    for path in paths:
+      candidate = Path(str(path))
+      chip = QFrame()
+      chip.setStyleSheet(
+        "QFrame { background: #16191D; border: 1px solid #1E2228; border-radius: 8px; }"
+      )
+      box = QHBoxLayout(chip)
+      box.setContentsMargins(6, 4, 6, 4)
+      box.setSpacing(6)
+      thumb = QLabel()
+      thumb.setFixedSize(36, 36)
+      if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"} and candidate.is_file():
+        pixmap = QPixmap(str(candidate)).scaled(
+          36, 36, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+        )
+        thumb.setPixmap(pixmap)
+      else:
+        thumb.setStyleSheet("background: #0B0E14; border-radius: 6px;")
+      box.addWidget(thumb)
+      name = QLabel(candidate.name[:28])
+      name.setStyleSheet("color: #C8D1DC; font-size: 10px; border: none;")
+      box.addWidget(name)
+      remove = QPushButton("x")
+      remove.setFixedSize(18, 18)
+      remove.setCursor(Qt.CursorShape.PointingHandCursor)
+      remove.setStyleSheet(
+        "QPushButton { background: transparent; color: #8E95A0; border: none; font-size: 11px; }"
+        "QPushButton:hover { color: #E06C75; }"
+      )
+      remove.clicked.connect(lambda _checked=False, target=str(candidate): self._remove_attachment_path(target))
+      box.addWidget(remove)
+      row.addWidget(chip)
+    empty = row.count() == 0
+    if hasattr(self, "attachment_chip_host"):
+      self.attachment_chip_host.setVisible(not empty)
+
+  def _remove_attachment_path(self, target: str) -> None:
+    paths = [str(path) for path in (getattr(self, "attachments", []) or []) if str(path) != target]
+    self.attachments = [Path(item) for item in paths]
+    self._sync_attachment_chips()
 
   def _build_chat_page(self) -> QWidget:
     content = QWidget()
@@ -1256,6 +1363,13 @@ class MainWindow(
     self.input.drag_hover_changed.connect(self._set_drop_target_state)
     input_row.addWidget(self.input, 1)
 
+    self.attachment_chip_host = QWidget()
+    self.attachment_chips = QHBoxLayout(self.attachment_chip_host)
+    self.attachment_chips.setContentsMargins(0, 0, 0, 0)
+    self.attachment_chips.setSpacing(6)
+    self.attachment_chip_host.setVisible(False)
+    compose.addWidget(self.attachment_chip_host)
+
     compose.addLayout(input_row)
 
     self.attachment_list = QListWidget()
@@ -1298,7 +1412,9 @@ class MainWindow(
     self.engine_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.engine_button.setStyleSheet(
       "QToolButton#engineButton { background: #16191D; color: #C8D1DC; border: 1px solid #1E2228;"
-      " border-radius: 9px; padding: 4px 9px; font-size: 11px; }"
+      " border-radius: 9px; padding: 4px 24px 4px 9px; font-size: 11px; }"
+      "QToolButton#engineButton::menu-indicator { subcontrol-origin: padding;"
+      " subcontrol-position: center right; right: 7px; width: 8px; height: 8px; }"
       "QToolButton#engineButton:hover { border-color: #00D8F6; color: #00D8F6; }"
     )
     self.engine_menu = _QMenu(self.engine_button)
@@ -1315,6 +1431,7 @@ class MainWindow(
     self.active_engine = "rust"
     self._select_engine("rust", "Rust 1-Bit Engine (mark-server)")
     actions.addWidget(self.engine_button)
+    self.processing_badge.setVisible(False)
     actions.addWidget(self.processing_badge)
     actions.addWidget(self.model_selector)
     actions.addSpacing(6)
@@ -2320,15 +2437,20 @@ class MainWindow(
           ctx["selected_model"] = self.model_selector.current_model_id()
       decision = router.resolve_target(text, context=ctx)
 
-    badge_text = decision.badge_text
-    for emoji in ("", "", "", "", ""):
-      badge_text = badge_text.replace(emoji, "●")
+    import re as _re
+    badge_text = str(decision.badge_text or "")
+    # Normaliza qualquer bullet herdado: sempre no maximo um "● " no inicio.
+    badge_text = _re.sub(r"^[\s\u25cf\u2022\u00b7]+", "", badge_text).strip()
+    badge_text = _re.sub(r"[\u25cf]{2,}", "\u25cf", badge_text)
+    badge_text = f"\u25cf {badge_text}" if badge_text else "\u25cf Local"
     if hasattr(decision, "model_name") and decision.model_name:
       if "(" in badge_text and ")" in badge_text:
         prefix = badge_text[: badge_text.rfind("(") + 1]
         badge_text = f"{prefix}{decision.model_name})"
 
-    self.routing_target_badge.setText(self._localize_routing_dynamically(badge_text))
+    _new_badge = self._localize_routing_dynamically(badge_text)
+    if self.routing_target_badge.text() != _new_badge:
+      self.routing_target_badge.setText(_new_badge)
     self.routing_target_badge.setToolTip(f"{decision.reason}\nNível de privacidade: {decision.privacy_level}")
     self.routing_target_badge.adjustSize()
     fm = self.routing_target_badge.fontMetrics()

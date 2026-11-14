@@ -265,6 +265,14 @@ def _scan_ollama(tag: str) -> dict[str, Any]:
 
 def candidate_paths(model_id: str) -> list[Path]:
     """Caminhos plausiveis para um modelo local, sem varrer o disco inteiro."""
+    key = str(model_id or "").strip()
+    lower = key.lower()
+    if not key:
+        return []
+    if ":" in key and not Path(key).exists():
+        # tag do Ollama (ex: deepseek-r1:8b-q3_k_l) nunca e diretorio local
+        return []
+
     roots: list[Path] = []
     env_root = os.environ.get("MARK_MODEL_ROOT")
     if env_root:
@@ -275,25 +283,26 @@ def candidate_paths(model_id: str) -> list[Path]:
     external = os.environ.get("MARK_EXTERNAL_MODELS")
     if external:
         roots.append(Path(external))
+
     paths: list[Path] = []
     for root in roots:
         if not root.is_dir():
             continue
-        direct = root / model_id
-        paths.append(direct)
-        flat = root / model_id.replace("/", "__")
-        paths.append(flat)
-        slug = model_id.split("/")[-1]
-        paths.append(root / slug)
-        paths.append(root / f"models--{model_id.replace('/', '--')}")
-    try:
-        from ..rust_bridge import rust
+        paths.append(root / key)
+        paths.append(root / key.replace("/", "__"))
+        paths.append(root / key.split("/")[-1])
+        paths.append(root / f"models--{key.replace('/', '--')}")
 
-        checkpoint = rust.engine_status().get("checkpoint")
-        if checkpoint:
-            paths.append(Path(str(checkpoint)))
-    except Exception:
-        pass
+    # O checkpoint SVID 1-Bit so vale quando o modelo pedido E o Mark-Bin-32B.
+    if any(token in lower for token in ("mark-bin-32b", "mark_bin_32b", "markbin32")):
+        try:
+            from ..rust_bridge import rust
+
+            checkpoint = rust.engine_status().get("checkpoint")
+            if checkpoint:
+                paths.append(Path(str(checkpoint)))
+        except Exception:
+            pass
     return [path for path in paths if path.exists()]
 
 
@@ -302,6 +311,8 @@ def scan_model(model_id: str, use_cache: bool = True) -> dict[str, Any]:
     if not model_id:
         return {"ok": False, "id": "", "reason": "modelo vazio"}
     key = model_id.strip()
+    if key.startswith("ollama:"):
+        key = key.split(":", 1)[1]
     if use_cache and key in _CACHE:
         return _CACHE[key]
 

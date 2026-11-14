@@ -766,12 +766,22 @@ class MainWindow(
           tokens = int(get_local_inference_params().get("num_ctx") or 0) or None
       except Exception:
           tokens = None
-      model_text = self.model_selector.currentText() if hasattr(self, "model_selector") else ""
-      model_id = (self.model_selector.currentData() or model_text) if hasattr(self, "model_selector") else ""
+      selector = getattr(self, "model_selector", None)
+      model_text = selector.currentText() if selector is not None else ""
+      model_id = ""
+      if selector is not None:
+          try:
+              model_id = str(selector.current_model_id() or "")
+          except Exception:
+              model_id = ""
+          if not model_id:
+              data = str(selector.currentData() or "")
+              model_id = data.split(":", 1)[1] if data.startswith("ollama:") else data
       profile = scan_model(str(model_id or model_text))
       scanned = profile.get("context")
-      if scanned and (not tokens or tokens > scanned):
-          tokens = scanned
+      # O rodape mostra o teto real do modelo; a requisicao usa min(config, teto).
+      if scanned:
+          tokens = int(scanned)
       self.ctx_status_label.setText(format_ctx(tokens))
       self.ctx_status_label.setToolTip(
           f"{profile.get('id', model_text)} context={scanned} layers={profile.get('layers')}"
@@ -2414,10 +2424,31 @@ class MainWindow(
 
     self._task(clear, done, failed)
 
+  def _fallback_model_name(self) -> str:
+    """Modelo secundario (fallback) do papel ativo, nunca o nome da engine."""
+    try:
+      from ..config import load_config
+
+      matrix = (load_config() or {}).get("roles_matrix") or {}
+      entry = matrix.get(getattr(self, "current_specialization", "general")) or {}
+      secondary = str(entry.get("secondary_model") or "").strip()
+      if secondary:
+        return secondary
+    except Exception:
+      pass
+    selector = getattr(self, "model_selector", None)
+    if selector is not None and selector.count() > 1:
+      return selector.itemText(1).split(" (")[0]
+    return ""
+
   def _update_routing_target_badge(self, decision: Any | None = None) -> None:
     if getattr(self, "model_selector", None) is not None and self.model_selector.currentData() == "mark":
-      self.routing_target_badge.setText(tr("Rust 1-Bit Engine (mark-server)"))
-      self.routing_target_badge.setStyleSheet("color: #00D8F6; font-size: 11px; font-weight: 500;")
+      fallback = self._fallback_model_name()
+      text = f"\u25cf Fallback: {fallback}" if fallback else "\u25cf Fallback: --"
+      if self.routing_target_badge.text() != text:
+        self.routing_target_badge.setText(text)
+      self.routing_target_badge.setStyleSheet("color: #3FB950; font-size: 11px; font-weight: 500;")
+      self.routing_target_badge.setToolTip(tr("Secondary model used if the primary fails"))
       return
     """Atualiza dinamicamente o Indicador de Destino Ativo com a resolução de pré-voo."""
     if not hasattr(self, "routing_target_badge") or self.routing_target_badge is None:

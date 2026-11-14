@@ -491,7 +491,13 @@ class ProviderSelectorWidget(QComboBox):
     self._update_badge()
 
   def start_async_discovery(self) -> None:
-    """Inicia deteccao em segundo plano para nao congelar a UI."""
+    """Inicia deteccao em segundo plano, no maximo a cada 20 s."""
+    import time as _time
+
+    last = float(getattr(self, "_last_discovery", 0.0) or 0.0)
+    if _time.time() - last < 20.0:
+      return
+    self._last_discovery = _time.time()
     if self._worker is not None and self._worker.isRunning():
       return
     self._worker = ModelDiscoveryWorker(self._config, parent=self)
@@ -550,12 +556,20 @@ class ProviderSelectorWidget(QComboBox):
     for index in range(self.count()):
       if "Mark-Bin-32B" in self.itemText(index):
         return
-    try:
-      from ..rust_bridge import rust
+    global _CHECKPOINT_CACHE
+    cached = globals().get("_CHECKPOINT_CACHE") or (0.0, None)
+    checkpoint = cached[1]
+    if not checkpoint:
+      import time as _time
 
-      if not rust.engine_status().get("checkpoint"):
-        return
-    except Exception:
+      try:
+        from ..rust_bridge import rust
+
+        checkpoint = rust.engine_status().get("checkpoint")
+      except Exception:
+        checkpoint = None
+      globals()["_CHECKPOINT_CACHE"] = (_time.time(), checkpoint)
+    if not checkpoint:
       return
     self.insertItem(0, "Mark-Bin-32B (1-Bit W1A4, 2M context)", "mark")
     meta = {
@@ -615,6 +629,8 @@ class ProviderSelectorWidget(QComboBox):
     saved_data = self._settings.value("chat/selected_model")
     self.clear()
     self._models_meta = []
+    # O Mark-Bin-32B entra antes da restauracao para que a chave salva o encontre.
+    self._pin_local_mark_model()
 
     valid_items_count = 0
 
@@ -627,8 +643,7 @@ class ProviderSelectorWidget(QComboBox):
     if chat_ollama:
       for idx, tag in enumerate(chat_ollama):
         display_name = self._format_local_model_name(tag)
-        # O primeiro modelo local recebe data='mark' para compatibilidade das rotas locais
-        data_val = "mark" if idx == 0 else f"ollama:{tag}"
+        data_val = f"ollama:{tag}"
         self.addItem(display_name, data_val)
         item_meta = {
           "id": tag,
@@ -738,7 +753,6 @@ class ProviderSelectorWidget(QComboBox):
       )
       self.view().setMinimumWidth(max(max_item_w, self.minimumWidth()))
     self._update_badge()
-    self._pin_local_mark_model()
   def _on_index_changed(self, index: int) -> None:
     self._persist_current_selection(index)
     self.adjustSize()

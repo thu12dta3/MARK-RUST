@@ -1,6 +1,6 @@
 //! Cliente do Hugging Face Hub: busca, listagem e download com retomada por `Range`.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -229,7 +229,7 @@ mod tests {
         let part = part_path(&dest);
         std::fs::remove_file(&dest).unwrap();
         let half = (n / 2).max(1) as usize;
-        std::fs::write(&part, &std::fs::read(&part).unwrap_or_default()).ok();
+        std::fs::write(&part, std::fs::read(&part).unwrap_or_default()).ok();
         std::fs::write(&part, &raw.as_bytes()[..half.min(raw.len())]).unwrap();
         let n2 = download_blocking("miceworks/Mark-SLM-V3-150M", "config.json", &dest, |_, _| {})
             .expect("download com retomada deve funcionar");

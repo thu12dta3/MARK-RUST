@@ -105,6 +105,46 @@ impl SafeTensors {
     }
 
 
+
+    /// Intervalo absoluto em bytes de um tensor dentro do arquivo mapeado.
+    pub fn file_range(&self, name: &str) -> Option<(usize, usize)> {
+        let t = self.tensors.get(name)?;
+        let base = 8 + self.header_len();
+        Some((base + t.data_offsets.0, base + t.data_offsets.1))
+    }
+
+    /// Descarta do page cache o intervalo informado (o dado volta a vir do disco).
+    pub fn drop_cache(&self, start: usize, end: usize) {
+        if end <= start {
+            return;
+        }
+        let page = 4096usize;
+        let aligned_start = start & !(page - 1);
+        let len = end.saturating_sub(aligned_start);
+        unsafe {
+            libc::madvise(
+                self.mmap.as_ptr().add(aligned_start) as *mut libc::c_void,
+                len,
+                libc::MADV_DONTNEED,
+            );
+        }
+    }
+
+    /// Aquece apenas o intervalo informado, tocando uma vez por pagina.
+    pub fn warm_range(&self, start: usize, end: usize) -> usize {
+        if end <= start {
+            return 0;
+        }
+        let ptr = self.mmap.as_ptr();
+        let mut acc = 0usize;
+        let mut i = start;
+        while i < end {
+            acc = acc.wrapping_add(unsafe { *ptr.add(i) } as usize);
+            i += 4096;
+        }
+        acc
+    }
+
     /// Le cada pagina do mmap para popular o page cache do sistema.
     pub fn warm(&self) -> usize {
         let ptr = self.mmap.as_ptr();
@@ -205,7 +245,7 @@ impl SafeTensors {
         if t.dtype != "U8" {
             bail!("tensor '{name}' esperado U8, encontrado {}", t.dtype);
         }
-        Ok(self.raw(name)?)
+        self.raw(name)
     }
 
     /// Le um tensor F32 e devolve os valores (copia propria, sem vazamento).

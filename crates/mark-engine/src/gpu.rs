@@ -408,7 +408,7 @@ impl GpuEngine {
         unsafe {
             (self.d.launch)(
                 self.d.f_i8 as *mut c_void,
-                ((m_rows as u32) + 3) / 4,
+                (m_rows as u32).div_ceil(4),
                 1,
                 1,
                 128,
@@ -492,7 +492,7 @@ impl GpuEngine {
         unsafe {
             (self.d.launch)(
                 self.d.f_swiglu as *mut c_void,
-                ((inter as u32) + 127) / 128,
+                (inter as u32).div_ceil(128),
                 1,
                 1,
                 128,
@@ -672,7 +672,7 @@ impl GpuEngine {
         unsafe {
             (self.d.launch)(
                 self.d.f_w1a4 as *mut c_void,
-                ((m_rows as u32) + 127) / 128,
+                (m_rows as u32).div_ceil(128),
                 1,
                 1,
                 128,

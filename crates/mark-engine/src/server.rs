@@ -268,9 +268,7 @@ async fn handle(
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
 
         if req.stream {
-            let head = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncache-control: no-cache\r\nconnection: close\r\naccess-control-allow-origin: *\r\n\r\n"
-            );
+            let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncache-control: no-cache\r\nconnection: close\r\naccess-control-allow-origin: *\r\n\r\n".to_string();
             stream.write_all(head.as_bytes()).await?;
             let engine2 = engine.clone();
             let model2 = model.clone();

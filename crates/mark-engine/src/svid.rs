@@ -21,7 +21,7 @@ use rayon::prelude::*;
 use crate::gpu::{GpuBuffer, GpuEngine, GpuExperts};
 use crate::kernels::{
     homeostatic_residual_add_inplace, int4_dot_row, int4_dot_row_f32, matvec_i8_f32,
-    prepare_act_int4, quantize_act_i8, rmsnorm_into, svid_1bit_linear_subspace_w1a4,
+    prepare_act_int4, rmsnorm_into, svid_1bit_linear_subspace_w1a4,
     swiglu_inplace, YarnRopeCache,
 };
 use crate::safetensors::{BinTokenizer, SafeTensors};
@@ -193,9 +193,22 @@ impl SvidEngine {
 
         let st = Arc::new(SafeTensors::open(&gpu_core)?);
         let st_exp = Arc::new(SafeTensors::open(&mmap_experts)?);
+        let expert_names: Vec<String> = (14..N_LAYERS)
+            .map(|l| format!("layers.{l}.mlp.experts"))
+            .collect();
         if std::env::var("MARK_NO_WARM").is_err() {
-            std::hint::black_box(st_exp.warm());
+            let mut warmed = 0usize;
+            for l in 14..N_LAYERS {
+                let sp = format!("layers.{l}.mlp.experts");
+                for proj in ["gate_proj.q4", "up_proj.q4", "down_proj.q4"] {
+                    if let Some((a, b)) = st_exp.file_range(&format!("{sp}.{proj}")) {
+                        warmed += st_exp.warm_range(a, b);
+                    }
+                }
+            }
+            std::hint::black_box(warmed);
         }
+        let _ = &expert_names;
         let st_s4 = SafeTensors::open(&shard4)?;
         let st_delta = SafeTensors::open(&delta)?;
         // Valida que o delta de calibracao existe e e coerente antes de prosseguir.
@@ -644,7 +657,7 @@ impl SvidEngine {
                         HIDDEN,
                         &mut sh_u,
                     );
-                    swiglu_inplace(&mut sh_g, &mut sh_u);
+                    swiglu_inplace(&mut sh_g, &sh_u);
                     matvec_i8_f32(
                         &sh_g,
                         &lw.mlp_down_q8,
@@ -1031,7 +1044,7 @@ fn build_gpu(
             format!("{sp}.mlp.shared_experts")
         };
         let src: &SafeTensors = if l <= 10 { st } else { st_exp };
-        let experts = if l >= 1 && l <= GPU_EXPERT_LAYERS {
+        let experts = if (1..=GPU_EXPERT_LAYERS).contains(&l) {
             let p = format!("{sp}.mlp.experts");
             Some(GpuExperts {
                 gate_q4: engine.upload_u8(src.u8_slice(&format!("{p}.gate_proj.q4"))?)?,

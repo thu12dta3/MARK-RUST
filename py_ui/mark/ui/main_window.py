@@ -562,8 +562,8 @@ class MainWindow(
     self.professor_button.setIconSize(QSize(16, 16))
     self.professor_button.setFixedHeight(32)
     self.professor_button.setCursor(Qt.CursorShape.PointingHandCursor)
+    self.professor_button.setVisible(False)
     self.professor_button.clicked.connect(lambda: self.open_specialized_chat("professor"))
-    sidebar_layout.addWidget(self.professor_button)
 
     self.vision_nav_button = QPushButton("Vision")
     self.vision_nav_button.setObjectName("visionNavButton")
@@ -1227,7 +1227,8 @@ class MainWindow(
     self.chat_column_container = QWidget()
     self.chat_column_container.setObjectName("chatColumnContainer")
     self.chat_column_container.setMinimumWidth(680)
-    self.chat_column_container.setMaximumWidth(920)
+    self.chat_column_container.setMaximumWidth(16777215)
+    self.chat_column_container.setContentsMargins(0, 0, 0, 0)
     self.chat_column_container.setSizePolicy(
       QSizePolicy.Policy.Expanding,
       QSizePolicy.Policy.Expanding,
@@ -1304,7 +1305,6 @@ class MainWindow(
     self.settings_button.setToolTip("Abrir painel de configurações")
     self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.settings_button.clicked.connect(self.open_settings)
-    top.addWidget(self.settings_button)
 
     self.refresh_button = QPushButton()
     self.refresh_button.setObjectName("iconButton")

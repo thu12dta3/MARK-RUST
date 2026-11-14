@@ -375,6 +375,13 @@ impl GpuEngine {
         Ok(engine)
     }
 
+    /// Torna o contexto CUDA primario atual nesta thread antes de qualquer chamada.
+    fn bind(&self) {
+        unsafe {
+            (self.d.set_ctx)(self.d.ctx as *mut c_void);
+        }
+    }
+
     fn alloc_bytes(&self, bytes: usize) -> Result<GpuBuffer> {
         let mut p: u64 = 0;
         let rc = unsafe { (self.d.alloc)(&mut p, bytes.max(1)) };
@@ -401,29 +408,34 @@ impl GpuEngine {
 
     /// Envia int8.
     pub fn upload_i8(&self, data: &[i8]) -> Result<GpuBuffer> {
+        self.bind();
         let bytes = unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len()) };
         self.upload(bytes)
     }
 
     /// Envia u8.
     pub fn upload_u8(&self, data: &[u8]) -> Result<GpuBuffer> {
+        self.bind();
         self.upload(data)
     }
 
     /// Envia f32.
     pub fn upload_f32(&self, data: &[f32]) -> Result<GpuBuffer> {
+        self.bind();
         let bytes = unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) };
         self.upload(bytes)
     }
 
     /// Envia u64.
     pub fn upload_u64(&self, data: &[u64]) -> Result<GpuBuffer> {
+        self.bind();
         let bytes = unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 8) };
         self.upload(bytes)
     }
 
     /// Envia um vetor f32 para um buffer existente.
     pub fn htod_f32(&self, dst: &GpuBuffer, data: &[f32]) -> Result<()> {
+        self.bind();
         let bytes = unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) };
         let rc = unsafe {
             (self.d.htod)(dst.ptr, bytes.as_ptr() as *const c_void, bytes.len())
@@ -503,6 +515,7 @@ impl GpuEngine {
         k_cols: usize,
         out: &mut [f32],
     ) -> Result<()> {
+        self.bind();
         if x.len() < k_cols {
             bail!("matvec_i8: entrada com {} valores, esperado {k_cols}", x.len());
         }
@@ -529,6 +542,7 @@ impl GpuEngine {
         q_out: &mut [f32],
         kva_out: &mut [f32],
     ) -> Result<()> {
+        self.bind();
         self.htod_f32(&self.d_x, &x[..2048])?;
         self.launch_i8_raw(q_w, q_sc, &self.d_x, &self.d_y, 0, 3072, 2048);
         self.launch_i8_raw(kva_w, kva_sc, &self.d_x, &self.d_inter, 0, 576, 2048);
@@ -550,6 +564,7 @@ impl GpuEngine {
         d_sc: &GpuBuffer,
         inter: usize,
     ) -> Result<()> {
+        self.bind();
         self.htod_f32(&self.d_x, &x[..2048])?;
         self.launch_i8_raw(g_w, g_sc, &self.d_x, &self.d_y, 0, inter, 2048);
         self.launch_i8_raw(u_w, u_sc, &self.d_x, &self.d_inter, 0, inter, 2048);
@@ -580,6 +595,7 @@ impl GpuEngine {
 
     /// Busca o resultado acumulado da MLP compartilhada.
     pub fn fetch_shared(&self, out: &mut [f32]) -> Result<()> {
+        self.bind();
         self.dtoh_f32(&self.d_accum, &mut out[..2048])
     }
 
@@ -594,6 +610,7 @@ impl GpuEngine {
         inter: usize,
         hidden: usize,
     ) -> Result<()> {
+        self.bind();
         self.htod_f32(&self.d_x, &x[..hidden])?;
         let g_q = ex.gate_q4.ptr + (expert * inter * 1024) as u64;
         let g_s = ex.gate_sc.ptr + (expert * inter * 16 * 4) as u64;
@@ -679,6 +696,7 @@ impl GpuEngine {
         m_rows: usize,
         out: &mut [f32],
     ) -> Result<()> {
+        self.bind();
         let in_dim = col_scale.len();
         if in_dim % 64 != 0 {
             bail!("lrd: dimensao de entrada precisa ser multiplo de 64");
@@ -762,6 +780,7 @@ impl GpuEngine {
 
     /// Sincroniza o contexto CUDA.
     pub fn sync(&self) {
+        self.bind();
         unsafe {
             (self.d.sync)();
         }
@@ -769,6 +788,7 @@ impl GpuEngine {
 
     /// Zera bytes de um buffer (usado antes de acumulacoes).
     pub fn zero(&self, buf: &GpuBuffer) -> Result<()> {
+        self.bind();
         let rc = unsafe { (self.d.memset8)(buf.ptr, 0, buf.len()) };
         if rc != 0 {
             bail!("cuMemsetD8 falhou (codigo {rc})");

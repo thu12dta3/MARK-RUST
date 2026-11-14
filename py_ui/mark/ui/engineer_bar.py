@@ -70,6 +70,7 @@ class EngineerBar(QFrame):
         layout.addWidget(self.project_button, 1)
 
         self.permission_combo = QComboBox()
+        self.permission_combo.setCurrentIndex(2)
         for value, label in PERMISSIONS:
             self.permission_combo.addItem(tr(label), value)
         self.permission_combo.setStyleSheet(
@@ -84,6 +85,7 @@ class EngineerBar(QFrame):
         self.web_button = QPushButton()
         self.web_button.setCheckable(True)
         self.web_button.setChecked(True)
+        self.web_button.setVisible(False)
         self.web_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.web_button.setStyleSheet(
             "QPushButton { background: #16191D; color: #8E95A0; border: 1px solid #1E2228;"
@@ -91,7 +93,6 @@ class EngineerBar(QFrame):
             "QPushButton:checked { color: #3FB950; border-color: #29502F; }"
         )
         self.web_button.toggled.connect(self._on_web_toggled)
-        layout.addWidget(self.web_button)
 
         self.rescan_button = QPushButton(tr("Re-scan PC"))
         self.rescan_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -100,16 +101,18 @@ class EngineerBar(QFrame):
             "QPushButton { background: transparent; color: #00D8F6; border: none;"
             " font-size: 10px; padding: 2px 6px; }"
         )
+        self.rescan_button.setVisible(False)
         self.rescan_button.clicked.connect(lambda: self.rescan(True))
-        layout.addWidget(self.rescan_button)
 
-        self.project = str(Path.home() / "MARK-RUST")
+        self.project = ""
         self._refresh_labels()
         self.load_profile()
+        self._auto_scan_if_stale()
 
     # ------------------------------------------------------------------ estado
     def _refresh_labels(self) -> None:
-        self.project_button.setText(f"{tr('Choose project')}: {self.project}")
+        label = self.project or tr("No project (Sandbox)")
+        self.project_button.setText(f"{tr('Choose project')}: {label}")
         state = tr("Web Access: ON") if self.web_button.isChecked() else tr("Web Access: OFF")
         self.web_button.setText(state)
 
@@ -139,6 +142,22 @@ class EngineerBar(QFrame):
             self._profile = json.loads(PROFILE_PATH.read_text())
         except (OSError, json.JSONDecodeError):
             self._profile = {}
+
+    def _auto_scan_if_stale(self) -> None:
+        """Escaneia o hardware em background quando o perfil falta ou envelheceu."""
+        import time as _time
+
+        fresh = False
+        try:
+            if PROFILE_PATH.is_file():
+                fresh = (_time.time() - PROFILE_PATH.stat().st_mtime) < 24 * 3600
+        except OSError:
+            fresh = False
+        if fresh:
+            return
+        from PyQt6.QtCore import QTimer
+
+        QTimer.singleShot(800, lambda: self.rescan(True))
 
     def hardware_line(self) -> str:
         """Linha unica de hardware cadastrado para o estado vazio do Engineer."""

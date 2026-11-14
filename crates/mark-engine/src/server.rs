@@ -65,9 +65,41 @@ struct ChatRequest {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+struct ContentPart {
+    #[serde(default, rename = "type")]
+    kind: String,
+    #[serde(default)]
+    text: Option<String>,
+}
+
+/// Conteudo no formato OpenAI: string simples ou lista de partes multimodais.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+enum ContentField {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+impl ContentField {
+    /// Texto plano concatenado das partes de texto.
+    fn as_text(&self) -> String {
+        match self {
+            ContentField::Text(value) => value.clone(),
+            ContentField::Parts(parts) => parts
+                .iter()
+                .filter(|part| part.kind.is_empty() || part.kind == "text" || part.kind == "input_text")
+                .filter_map(|part| part.text.clone())
+                .collect::<Vec<String>>()
+                .join("\n"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 struct WireMessage {
     role: String,
-    content: String,
+    #[serde(default)]
+    content: Option<ContentField>,
 }
 
 #[derive(Serialize)]
@@ -226,17 +258,18 @@ fn split_messages(messages: &[WireMessage]) -> (Option<String>, String, Vec<(Str
     let mut last_user = String::new();
     for m in messages {
         match m.role.as_str() {
-            "system" => system = Some(m.content.clone()),
+            "system" => system = Some(m.content.as_ref().map(ContentField::as_text).unwrap_or_default()),
             "user" => {
                 if let Some(u) = pending.take() {
                     turns.push((u, String::new()));
                 }
-                pending = Some(m.content.clone());
-                last_user = m.content.clone();
+                let text = m.content.as_ref().map(ContentField::as_text).unwrap_or_default();
+                pending = Some(text.clone());
+                last_user = text;
             }
             "assistant" => {
                 if let Some(u) = pending.take() {
-                    turns.push((u, m.content.clone()));
+                    turns.push((u, m.content.as_ref().map(ContentField::as_text).unwrap_or_default()));
                 }
             }
             _ => {}

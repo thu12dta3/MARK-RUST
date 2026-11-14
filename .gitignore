@@ -15,3 +15,7 @@ target/
 vault.bin
 *.log
 .DS_Store
+
+# compiled Python extensions (built artifacts)
+py_ui/**/*.so
+py_ui/mark/*.so

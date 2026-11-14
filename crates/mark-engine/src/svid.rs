@@ -261,9 +261,12 @@ impl SvidEngine {
         let tokenizer = BinTokenizer::load(&tok_path)?;
 
         let gpu = if std::env::var("MARK_FORCE_CPU").is_ok() {
+            eprintln!("svid: MARK_FORCE_CPU definido, inferencia na CPU");
             None
         } else {
-            build_gpu(
+            // Nunca engolir o erro: um fallback silencioso para a CPU derruba a
+            // taxa de ~31 tok/s para ~11 tok/s sem nenhum sinal no log.
+            match build_gpu(
                 &st,
                 &st_exp,
                 &lm_scale,
@@ -272,8 +275,13 @@ impl SvidEngine {
                 &lrd_gate_row_scale,
                 &lrd_down_bits,
                 &lrd_down_row_scale,
-            )
-            .ok()
+            ) {
+                Ok(state) => Some(state),
+                Err(error) => {
+                    eprintln!("svid: GPU indisponivel ({error:#}); caindo para CPU");
+                    None
+                }
+            }
         };
 
         // Page cache: o que foi para a VRAM sai; o que roda na CPU (14..26) fica.

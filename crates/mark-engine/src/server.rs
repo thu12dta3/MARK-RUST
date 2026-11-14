@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::http_backends::ChatMessage;
-use crate::{generate_streaming, ChatContext, Engine, StreamEvent};
+use crate::{generate_streaming, ChatContext, Engine, RequestTuning, StreamEvent};
 
 /// Modelo anunciado pelo servidor.
 #[derive(Debug, Clone, Serialize)]
@@ -351,6 +351,7 @@ async fn handle(
             });
             return write_json(&mut stream, 503, &payload.to_string()).await;
         };
+        let engine_label = engine.label();
         let (system, prompt, turns) = split_messages(&req.messages);
         if prompt.trim().is_empty() {
             let payload = serde_json::json!({"error": {"message": "mensagem de usuario ausente"}});
@@ -369,9 +370,13 @@ async fn handle(
                 })
                 .collect(),
         };
-        if let Some(value) = request_temperature {
-            eprintln!("mark-server: temperatura da requisicao = {value}");
-        }
+        // Ajustes reais por requisicao: profundidade de raciocinio, teto de
+        // tokens e temperatura chegam ao motor (nativo ou remoto).
+        let tuning = RequestTuning {
+            reasoning_loops: loops,
+            max_tokens: if limit > 0 { Some(limit) } else { None },
+            temperature: request_temperature,
+        };
         let id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
         let created = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -387,7 +392,7 @@ async fn handle(
             let model2 = model.clone();
             let mut emitted = 0usize;
             tokio::spawn(async move {
-                let _ = generate_streaming(&engine2, &ctx, &prompt, cancel, tx, loops).await;
+                let _ = generate_streaming(&engine2, &ctx, &prompt, cancel, tx, tuning).await;
             });
             while let Some(ev) = rx.recv().await {
                 match ev {
@@ -459,12 +464,16 @@ async fn handle(
                 system: system2,
                 history: history2,
             };
-            let _ = generate_streaming(&engine2, &ctx2, &prompt2, cancel2, tx2, loops).await;
+            let _ = generate_streaming(&engine2, &ctx2, &prompt2, cancel2, tx2, tuning).await;
         });
         let mut text = String::new();
+        let mut emitted = 0usize;
         while let Some(ev) = rx2.recv().await {
             match ev {
-                StreamEvent::Delta(d) => text.push_str(&d),
+                StreamEvent::Delta(d) => {
+                    text.push_str(&d);
+                    emitted += 1;
+                }
                 StreamEvent::Error(e) => {
                     let payload = serde_json::json!({"error": {"message": e}});
                     return write_json(&mut stream, 500, &payload.to_string()).await;
@@ -487,6 +496,17 @@ async fn handle(
                 "message": {"role": "assistant", "content": text},
                 "finish_reason": "stop"
             }],
+            "usage": {
+                "completion_tokens": emitted,
+                "total_tokens": emitted
+            },
+            // Parametros efetivamente aplicados pelo motor (prova de comportamento).
+            "mark": {
+                "engine": engine_label,
+                "reasoning_loops": loops.unwrap_or(2),
+                "max_tokens": limit,
+                "tokens_generated": emitted
+            },
         });
         return write_json(&mut stream, 200, &payload.to_string()).await;
     }

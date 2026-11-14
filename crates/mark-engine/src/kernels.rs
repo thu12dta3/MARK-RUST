@@ -594,6 +594,88 @@ impl YarnRopeCache {
     }
 }
 
+/// RoPE YaRN intercalado por par (2i, 2i+1), com posicao resolvida por chamada.
+///
+/// Paridade exata com `YarnRopeInterleavedCache` do motor Rust validado: mesmas
+/// constantes, mesma expressao numerica e mesma convencao de rotacao. A tabela
+/// pre-computada e substituida pelo calculo direto do angulo (32 senos/cossenos
+/// por cabeca), o que mantem os mesmos bits e dispensa alocar tabelas por posicao.
+pub struct YarnRopeSeq {
+    inv_freq: Vec<f32>,
+    rot_mscale: f32,
+    softmax_scale: f32,
+}
+
+impl YarnRopeSeq {
+    /// Constroi o ramp YaRN para `rope_dim` colunas rotacionadas por cabeca.
+    pub fn new(rope_dim: usize, head_dim: usize) -> Self {
+        let half = rope_dim / 2;
+        let base = 10_000.0f32;
+        let orig_max = 4096.0f32;
+        let factor = 40.0f32;
+        let beta_fast = 32.0f32;
+        let beta_slow = 1.0f32;
+        let mscale = 0.707f32;
+        let mscale_all = 0.707f32;
+
+        let low_raw = ((rope_dim as f32) * (orig_max / (beta_fast * 2.0 * std::f32::consts::PI)).ln())
+            / (2.0 * base.ln());
+        let high_raw =
+            ((rope_dim as f32) * (orig_max / (beta_slow * 2.0 * std::f32::consts::PI)).ln())
+                / (2.0 * base.ln());
+        let low = low_raw.floor().max(0.0);
+        let high = high_raw.ceil().min((rope_dim - 1) as f32);
+        let denom = (high - low).max(0.001);
+
+        let mut inv_freq = vec![0.0f32; half];
+        for (i, slot) in inv_freq.iter_mut().enumerate() {
+            let exponent = (2 * i) as f32 / (rope_dim as f32);
+            let freq_extra = 1.0 / base.powf(exponent);
+            let freq_inter = 1.0 / (factor * base.powf(exponent));
+            let ramp = (((i as f32) - low) / denom).clamp(0.0, 1.0);
+            let mask = 1.0 - ramp;
+            *slot = freq_inter * (1.0 - mask) + freq_extra * mask;
+        }
+
+        let mscale_num = 0.1 * mscale * factor.ln() + 1.0;
+        let mscale_den = 0.1 * mscale_all * factor.ln() + 1.0;
+        let rot_mscale = mscale_num / mscale_den;
+        let softmax_scale = (head_dim as f32).powf(-0.5) * mscale_den * mscale_den;
+
+        Self {
+            inv_freq,
+            rot_mscale,
+            softmax_scale,
+        }
+    }
+
+    /// Escala aplicada aos scores de atencao antes do softmax.
+    pub fn softmax_scale(&self) -> f32 {
+        self.softmax_scale
+    }
+
+    /// Rotaciona `head` (64 colunas rope) na posicao `pos`.
+    #[inline]
+    pub fn apply_head_in_place(&self, head: &mut [f32], pos: usize) {
+        let half = head.len() / 2;
+        let t = pos as f32;
+        let mut first = [0.0f32; 32];
+        let mut second = [0.0f32; 32];
+        for i in 0..half.min(32) {
+            let angle = t * self.inv_freq[i];
+            let c = angle.cos() * self.rot_mscale;
+            let s = angle.sin() * self.rot_mscale;
+            let x_even = head[2 * i];
+            let x_odd = head[2 * i + 1];
+            first[i] = x_even * c - x_odd * s;
+            second[i] = x_odd * c + x_even * s;
+        }
+        let n = half.min(32);
+        head[0..n].copy_from_slice(&first[0..n]);
+        head[n..2 * n].copy_from_slice(&second[0..n]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

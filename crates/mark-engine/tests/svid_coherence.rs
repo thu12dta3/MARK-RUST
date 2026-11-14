@@ -54,7 +54,8 @@ fn greedy_generation_matches_reference_motor() {
         .generate_streaming(&tok.prompt_ids, &greedy_cfg(1), cancel, |_id, text| {
             o2.lock().unwrap().push_str(text);
             n += 1;
-            n < 8
+            // 12 tokens cobrem a frase de referencia completa neste tokenizador.
+            n < 12
         })
         .expect("geracao deve executar");
 

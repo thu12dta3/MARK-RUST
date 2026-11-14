@@ -114,7 +114,7 @@ class ChatMixin:
             self.input.setFocus()
 
     def _append_bubble(self, text: str, role: str, created_at: int | None = None,
-                       auto_scroll: bool = True, source: str = ""):
+                       auto_scroll: bool = True, source: str = "", prepend: bool = False):
         if role == "assistant" and isinstance(text, str):
             text = sanitize_chat_output(text)
         if self.empty_state is not None:
@@ -137,9 +137,12 @@ class ChatMixin:
         if role == "assistant":
             row.addStretch(1)
         wrapper = QWidget()
-        wrapper.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
+        # O estilo do wrapper vem do QSS global (objectName): zero setStyleSheet
+        # por bolha, sem mudar um pixel do resultado visual.
+        wrapper.setObjectName("bubbleWrapper")
         wrapper.setLayout(row)
-        self.chat_layout.insertWidget(self.chat_layout.count() - 1, wrapper)
+        index = 0 if prepend else self.chat_layout.count() - 1
+        self.chat_layout.insertWidget(index, wrapper)
         if auto_scroll:
             self.follow_latest = True
             self._schedule_bottom_scroll()

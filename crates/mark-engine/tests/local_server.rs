@@ -52,6 +52,7 @@ fn local_server_serves_openai_api() {
         (addr, handle)
     });
 
+
     let (addr, handle) = addr;
     let base = format!("http://{addr}");
 
@@ -108,14 +109,20 @@ fn local_server_serves_openai_api() {
 
     let mut first = String::new();
     let mut chunks = stream.bytes_stream();
+    // Teto de tempo: sem isso um upstream parado pendura o gate para sempre.
     rt.block_on(async {
-        while let Some(chunk) = chunks.next().await {
-            let bytes = chunk.expect("chunk valido");
-            first.push_str(&String::from_utf8_lossy(&bytes));
-            if first.contains("data: ") && first.len() > 40 {
-                break;
+        let read = async {
+            while let Some(chunk) = chunks.next().await {
+                let bytes = chunk.expect("chunk valido");
+                first.push_str(&String::from_utf8_lossy(&bytes));
+                if first.contains("data: ") && first.len() > 40 {
+                    break;
+                }
             }
-        }
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(90), read)
+            .await
+            .expect("SSE deve emitir o primeiro chunk em ate 90s");
     });
     assert!(
         first.contains("chat.completion.chunk"),

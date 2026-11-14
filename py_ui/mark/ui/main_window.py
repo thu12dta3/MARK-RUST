@@ -349,8 +349,14 @@ class MainWindow(
     self.engineer_project_input = QLineEdit()
 
     self._build_ui()
-    self._load_history()
+    # O QSS global precisa existir ANTES das bolhas: aplicado depois ele
+    # re-polisha toda a arvore ja criada (medido: 2.5 s com 716 bolhas).
     self._set_style()
+    try:
+      self.scroll.verticalScrollBar().valueChanged.connect(self._on_chat_scrolled)
+    except Exception:
+      pass
+    self._load_history()
 
     QTimer.singleShot(0, self.input.setFocus)
     self.status_timer = QTimer(self)
@@ -1632,7 +1638,9 @@ class MainWindow(
     from .perf import defer as _defer_boot
 
     _defer_boot(self.model_selector.populate_from_config, 0)
-    self._ensure_local_mark_model()
+    # Sonda do motor local e I/O puro (~330 ms medidos no cProfile): sai do
+    # caminho critico do primeiro frame e roda logo apos o event loop iniciar.
+    QTimer.singleShot(0, self._ensure_local_mark_model)
 
     self.processing_badge = QLabel(self.model_selector.processing_type())
     self.processing_badge.setObjectName("processingBadge")
@@ -2366,13 +2374,47 @@ class MainWindow(
         self.empty_eyebrow = None
         widget.deleteLater()
     self.last_assistant_reply = ""
-    for role, content, created in rows:
+    # Paginacao no boot: so o bloco mais recente vira widget. O restante fica
+    # em memoria e e prependado sob demanda ao rolar ate o topo.
+    self._history_rows = list(rows)
+    self._history_rendered = min(self.history_page_size(), len(self._history_rows))
+    start = len(self._history_rows) - self._history_rendered
+    for role, content, created in self._history_rows[start:]:
       self._append_bubble(content, role, created, auto_scroll=False)
       if role == "assistant":
         self.last_assistant_reply = content
     self.history_signature = None
     if rows:
       self._schedule_bottom_scroll()
+
+  # Quantas mensagens do historico viram widget no boot.
+  HISTORY_PAGE = 25
+
+  def history_page_size(self) -> int:
+    return max(1, int(getattr(self, "HISTORY_PAGE", 25)))
+
+  def _load_older_messages(self) -> bool:
+    """Prepend do bloco anterior do historico (carregamento sob demanda)."""
+    rows = getattr(self, "_history_rows", [])
+    rendered = getattr(self, "_history_rendered", 0)
+    if rendered >= len(rows):
+      return False
+    start = max(0, len(rows) - rendered - self.history_page_size())
+    block = rows[start:len(rows) - rendered]
+    if not block:
+      return False
+    for role, content, created in reversed(block):
+      self._append_bubble(content, role, created, auto_scroll=False, prepend=True)
+    self._history_rendered += len(block)
+    return True
+
+  def _on_chat_scrolled(self, value: int) -> None:
+    """Ao encostar no topo, carrega o bloco anterior (nunca no boot)."""
+    if value > 2:
+      return
+    if getattr(self, "_history_rendered", 0) >= len(getattr(self, "_history_rows", [])):
+      return
+    self._load_older_messages()
 
   def _import_shared_turns(self) -> None:
     memory_file = Path(getattr(self, "_memory_file", MEMORY_FILE))

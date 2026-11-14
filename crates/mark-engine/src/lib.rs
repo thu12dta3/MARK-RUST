@@ -1,6 +1,7 @@
 #![allow(clippy::needless_range_loop)]
 //! Fachada do motor de inferencia: escolhe o backend real conforme o modelo.
 
+pub mod avx2;
 pub mod gguf;
 pub mod gpu;
 pub mod http_backends;
@@ -41,6 +42,17 @@ pub enum Engine {
     },
 }
 
+impl Engine {
+    /// Identificador curto do backend em uso (aparece nas respostas HTTP).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Engine::Svid { .. } => "rust-1bit",
+            Engine::Ollama { .. } => "ollama",
+            Engine::OpenAi { .. } => "openai",
+        }
+    }
+}
+
 /// Evento emitido durante a geracao.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
@@ -62,6 +74,18 @@ pub struct ChatContext {
     pub history: Vec<ChatMessage>,
 }
 
+/// Ajustes de amostragem vindos da requisicao (`/v1/chat/completions`).
+///
+/// `reasoning_loops` controla a profundidade do bloco recorrente LRD no motor
+/// nativo e a temperatura/teto do backend remoto; `max_tokens` limita os tokens
+/// realmente gerados; `temperature` sobrepoe a temperatura do motor.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RequestTuning {
+    pub reasoning_loops: Option<u32>,
+    pub max_tokens: Option<usize>,
+    pub temperature: Option<f32>,
+}
+
 /// Executa a inferencia em streaming, emitindo eventos.
 ///
 /// O cancelamento e imediato: `cancel` e verificado a cada fragmento.
@@ -71,8 +95,9 @@ pub async fn generate_streaming(
     prompt: &str,
     cancel: Arc<AtomicBool>,
     tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>,
-    reasoning_loops: Option<u32>,
+    tuning: RequestTuning,
 ) -> Result<()> {
+    let reasoning_loops = tuning.reasoning_loops;
     let mut messages: Vec<ChatMessage> = Vec::with_capacity(ctx.history.len() + 2);
     if let Some(s) = &ctx.system {
         if !s.trim().is_empty() {
@@ -90,8 +115,19 @@ pub async fn generate_streaming(
             let ctx2 = ctx.clone();
             let prompt2 = prompt.to_string();
             let engine2 = engine.clone();
-            let config2 = config.clone();
+            let mut config2 = config.clone();
+            // Profundidade de raciocinio e temperatura efetivas por requisicao.
+            if let Some(loops) = tuning.reasoning_loops {
+                config2.core_loops = loops.clamp(1, 3);
+            }
+            if let Some(t) = tuning.temperature {
+                if t > 0.0 {
+                    config2.temperature = t;
+                }
+            }
+            let max_tokens = tuning.max_tokens;
             let handle = tokio::task::spawn_blocking(move || {
+                let mut emitted = 0usize;
                 let mut full = String::new();
                 let tok = engine2.tokenizer();
                 let mut turns: Vec<(String, String)> = Vec::new();
@@ -127,7 +163,11 @@ pub async fn generate_streaming(
                             return false;
                         }
                         full.push_str(text);
-                        tx2.send(StreamEvent::Delta(text.to_string())).is_ok()
+                        emitted += 1;
+                        if tx2.send(StreamEvent::Delta(text.to_string())).is_err() {
+                            return false;
+                        }
+                        !matches!(max_tokens, Some(limit) if emitted >= limit)
                     },
                 );
                 match res {
@@ -155,12 +195,16 @@ pub async fn generate_streaming(
             let req = CompletionRequest {
                 model: model.clone(),
                 messages,
-                temperature: if reasoning_loops.unwrap_or(2) >= 3 { 0.15 } else { config.temperature },
-                max_tokens: match reasoning_loops.unwrap_or(2) {
+                temperature: tuning
+                    .temperature
+                    .unwrap_or(if reasoning_loops.unwrap_or(2) >= 3 { 0.15 } else { config.temperature }),
+                max_tokens: tuning.max_tokens.map(|m| m as u32).unwrap_or(match reasoning_loops
+                    .unwrap_or(2)
+                {
                     1 => 512,
                     3 => 4096,
                     _ => 2048,
-                },
+                }),
                 top_p: 0.8,
                 top_k: 40,
                 stream: true,
@@ -168,41 +212,31 @@ pub async fn generate_streaming(
                 keep_alive: Some("5m".into()),
                 extra_options: Default::default(),
             };
+            // I/O puro: nada de `spawn_blocking` com runtime aninhado aqui. O
+            // `client.stream` roda na runtime async corrente e cada delta vai
+            // direto para o canal SSE (antes o runtime aninhado prendia o
+            // primeiro chunk e o cliente ficava sem receber bytes).
             let tx2 = tx.clone();
             let cancel2 = cancel.clone();
-            let client = client.clone();
-            let handle = tokio::task::spawn_blocking(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build();
-                let Ok(rt) = rt else {
-                    let _ = tx2.send(StreamEvent::Error("runtime interno indisponivel".into()));
-                    return;
-                };
-                rt.block_on(async {
-                    let cancel3 = cancel2.clone();
-                    let res = client
-                        .stream(&req, cancel3, |chunk| {
-                            if cancel2.load(Ordering::Relaxed) {
-                                return false;
-                            }
-                            tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
-                        })
-                        .await;
-                    match res {
-                        Ok(r) => {
-                            let _ = tx2.send(StreamEvent::Usage {
-                                prompt_tokens: r.prompt_tokens,
-                                completion_tokens: r.completion_tokens,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = tx2.send(StreamEvent::Error(format!("{e:#}")));
-                        }
+            let res = client
+                .stream(&req, cancel.clone(), |chunk| {
+                    if cancel2.load(Ordering::Relaxed) {
+                        return false;
                     }
-                });
-            });
-            handle.await.map_err(|e| anyhow::anyhow!("tarefa de streaming falhou: {e}"))?;
+                    tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
+                })
+                .await;
+            match res {
+                Ok(r) => {
+                    let _ = tx.send(StreamEvent::Usage {
+                        prompt_tokens: r.prompt_tokens,
+                        completion_tokens: r.completion_tokens,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(StreamEvent::Error(format!("{e:#}")));
+                }
+            }
             Ok(())
         }
         Engine::OpenAi {
@@ -213,8 +247,8 @@ pub async fn generate_streaming(
             let req = CompletionRequest {
                 model: model.clone(),
                 messages,
-                temperature: config.temperature,
-                max_tokens: 2048,
+                temperature: tuning.temperature.unwrap_or(config.temperature),
+                max_tokens: tuning.max_tokens.map(|m| m as u32).unwrap_or(2048),
                 top_p: 0.8,
                 top_k: 40,
                 stream: true,
@@ -222,41 +256,31 @@ pub async fn generate_streaming(
                 keep_alive: None,
                 extra_options: Default::default(),
             };
+            // I/O puro: nada de `spawn_blocking` com runtime aninhado aqui. O
+            // `client.stream` roda na runtime async corrente e cada delta vai
+            // direto para o canal SSE (antes o runtime aninhado prendia o
+            // primeiro chunk e o cliente ficava sem receber bytes).
             let tx2 = tx.clone();
             let cancel2 = cancel.clone();
-            let client = client.clone();
-            let handle = tokio::task::spawn_blocking(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build();
-                let Ok(rt) = rt else {
-                    let _ = tx2.send(StreamEvent::Error("runtime interno indisponivel".into()));
-                    return;
-                };
-                rt.block_on(async {
-                    let cancel3 = cancel2.clone();
-                    let res = client
-                        .stream(&req, cancel3, |chunk| {
-                            if cancel2.load(Ordering::Relaxed) {
-                                return false;
-                            }
-                            tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
-                        })
-                        .await;
-                    match res {
-                        Ok(r) => {
-                            let _ = tx2.send(StreamEvent::Usage {
-                                prompt_tokens: r.prompt_tokens,
-                                completion_tokens: r.completion_tokens,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = tx2.send(StreamEvent::Error(format!("{e:#}")));
-                        }
+            let res = client
+                .stream(&req, cancel.clone(), |chunk| {
+                    if cancel2.load(Ordering::Relaxed) {
+                        return false;
                     }
-                });
-            });
-            handle.await.map_err(|e| anyhow::anyhow!("tarefa de streaming falhou: {e}"))?;
+                    tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
+                })
+                .await;
+            match res {
+                Ok(r) => {
+                    let _ = tx.send(StreamEvent::Usage {
+                        prompt_tokens: r.prompt_tokens,
+                        completion_tokens: r.completion_tokens,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(StreamEvent::Error(format!("{e:#}")));
+                }
+            }
             Ok(())
         }
     }

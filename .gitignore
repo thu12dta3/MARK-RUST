@@ -24,3 +24,5 @@ __pycache__/
 *.pyc
 
 graphify-out/
+
+sealed_models/

@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use mark_core::{InferenceConfig, ModelEntry, ReasoningLevel};
 use mark_engine::http_backends::ChatMessage;
-use mark_engine::{build_engine, generate_streaming, ChatContext, Engine, StreamEvent};
+use mark_engine::{build_engine, generate_streaming, ChatContext, Engine, RequestTuning, StreamEvent};
 
 /// Pedido enviado da UI para o worker.
 #[derive(Debug)]
@@ -207,7 +207,11 @@ fn run(rx: Receiver<Job>, tx: Sender<Ev>, cancel: Arc<AtomicBool>) {
                         &prompt,
                         cancel2,
                         tx_stream,
-                        None,
+                        RequestTuning {
+                            reasoning_loops: None,
+                            max_tokens: Some(max_tokens.max(1) as usize),
+                            temperature: None,
+                        },
                     ));
                     let mut done = false;
                     let mut emitted = 0u32;

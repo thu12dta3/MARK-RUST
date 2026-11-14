@@ -674,5 +674,13 @@ pre {{
     padding: 10px;
     white-space: pre-wrap;
 }}
+
+/* Wrapper de linha da bolha: substitui o QSS por widget (1 regra global) */
+QWidget#bubbleWrapper {{
+    background: transparent;
+    border: none;
+    margin: 0px;
+    padding: 0px;
+}}
 """
 

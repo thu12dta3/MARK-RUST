@@ -4,7 +4,7 @@ use std::sync::Arc;
 use mark_engine::gguf::{ollama_has_model, ollama_import_gguf, ollama_model_name, which};
 use mark_engine::http_backends::OllamaClient;
 use mark_engine::svid::EngineConfig;
-use mark_engine::{generate_streaming, ChatContext, Engine, StreamEvent};
+use mark_engine::{generate_streaming, ChatContext, Engine, RequestTuning, StreamEvent};
 
 #[test]
 fn imports_real_gguf_into_ollama_and_generates() {
@@ -54,7 +54,14 @@ fn imports_real_gguf_into_ollama_and_generates() {
     let mut text = String::new();
     let ctx = ChatContext::default();
     rt.block_on(async {
-        let gen = generate_streaming(&engine, &ctx, "Diga apenas: ok", cancel.clone(), tx, None);
+        let gen = generate_streaming(
+            &engine,
+            &ctx,
+            "Diga apenas: ok",
+            cancel.clone(),
+            tx,
+            RequestTuning::default(),
+        );
         let drive = async {
             while let Some(ev) = rx.recv().await {
                 match ev {

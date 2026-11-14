@@ -180,6 +180,15 @@ class SentinelDialog(QDialog):
         self.permission_card.setVisible(False)
         layout.addWidget(self.permission_card)
 
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """Nunca deixa thread do scan viva ao fechar o dialogo."""
+        for name in ("_scan_worker", "_delete_worker"):
+            worker = getattr(self, name, None)
+            if worker is not None and worker.isRunning():
+                worker.quit()
+                worker.wait(3000)
+        super().closeEvent(event)
+
     def _pick_folder(self) -> None:
         chosen = QFileDialog.getExistingDirectory(self, tr("Select a folder to scan"), self.path_input.text())
         if chosen:

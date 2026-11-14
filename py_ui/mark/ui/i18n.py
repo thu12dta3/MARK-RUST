@@ -89,7 +89,18 @@ def current_language() -> str:
 
 
 def saved_language() -> str:
-    value = str(_settings.value("ui/language", DEFAULT_LANGUAGE) or DEFAULT_LANGUAGE)
+    value = ""
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+
+        cfg_path = _Path.home() / ".config" / "mark" / "config.json"
+        if cfg_path.is_file():
+            value = str(_json.loads(cfg_path.read_text()).get("language") or "")
+    except (OSError, ValueError):
+        value = ""
+    if not value:
+        value = str(_settings.value("ui/language", DEFAULT_LANGUAGE) or DEFAULT_LANGUAGE)
     return value if value in LANGS else DEFAULT_LANGUAGE
 
 
@@ -129,6 +140,19 @@ def set_language(code: str, notify: bool = True) -> str:
     _current = code
     _settings.setValue("ui/language", code)
     _settings.sync()
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+
+        cfg_path = _Path.home() / ".config" / "mark" / "config.json"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        data = _json.loads(cfg_path.read_text()) if cfg_path.is_file() else {}
+        data["language"] = code
+        tmp = cfg_path.with_suffix(".tmp")
+        tmp.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(cfg_path)
+    except (OSError, ValueError):
+        pass
     if notify:
         for callback in list(_listeners):
             callback(code)

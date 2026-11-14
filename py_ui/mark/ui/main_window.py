@@ -360,7 +360,7 @@ class MainWindow(
     self.history_timer.timeout.connect(self._sync_history)
     self.history_timer.start(6000)
     on_language_change(self._apply_language)
-    QTimer.singleShot(100, self.refresh_status)
+    QTimer.singleShot(1200, self.refresh_status)
 
   def _build_ui(self) -> None:
     self.setStyleSheet(ThemeManager.get_stylesheet())
@@ -977,8 +977,29 @@ class MainWindow(
       if hasattr(self, "voice_status") and hasattr(self.voice_status, "value_label"):
           self.voice_status.value_label.setText(tr("Muted") if muted else tr("Ready"))
 
+  def _on_escape(self) -> None:
+    """Esc fecha popup/modal/palette; sem nada aberto, abre a Command Palette."""
+    from PyQt6.QtWidgets import QApplication
+
+    popup = QApplication.activePopupWidget()
+    if popup is not None:
+      popup.close()
+      return
+    modal = QApplication.activeModalWidget()
+    if modal is not None and modal is not self:
+      modal.reject()
+      return
+    palette = getattr(self, "command_palette", None)
+    if palette is not None and palette.isVisible():
+      palette.close()
+      return
+    self.open_command_palette()
+
   def _install_shortcuts(self) -> None:
-    """Instala o atalho global F11 de tela cheia."""
+    """Instala F11 (tela cheia) e Esc (Command Palette)."""
+    self.escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+    self.escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+    self.escape_shortcut.activated.connect(self._on_escape)
     self.fullscreen_shortcut = QShortcut(QKeySequence("F11"), self)
     self.fullscreen_shortcut.activated.connect(self.toggle_fullscreen)
 
@@ -1562,7 +1583,9 @@ class MainWindow(
     # Seletores Dinâmicos de IA
     self.model_selector = ProviderSelectorWidget()
     self.model_selector.setObjectName("modelSelector")
-    self.model_selector.populate_from_config()
+    from .perf import defer as _defer_boot
+
+    _defer_boot(self.model_selector.populate_from_config, 0)
     self._ensure_local_mark_model()
 
     self.processing_badge = QLabel(self.model_selector.processing_type())
@@ -1700,7 +1723,7 @@ class MainWindow(
     self.cmd_palette_btn.setObjectName("cmdPaletteButton")
     self.cmd_palette_btn.setToolTip("Abrir Menu de Comandos (Ctrl+K / Cmd+K)")
     self.cmd_palette_btn.clicked.connect(self.open_command_palette)
-    telemetry_layout.addWidget(self.cmd_palette_btn)
+    self.cmd_palette_btn.setVisible(False)
 
     telemetry_layout.addStretch(1)
 
@@ -1809,29 +1832,29 @@ class MainWindow(
   # -------------------------------------------------------------------------
   def _setup_command_palette(self) -> None:
     cp = self.command_palette
-    cp.add_category_header("--- SEGURANÇA E AGENTES ---")
-    cp.register_command("Antivírus e ameaças · Sentinel", self.open_sentinel, "Segurança")
-    cp.register_command("Dispositivos e segurança", self.open_mobile_devices, "Segurança")
+    cp.add_category_header(tr("--- SEGURANÇA E AGENTES ---"))
+    cp.register_command(tr("Antivírus e ameaças · Sentinel"), self.open_sentinel, "Segurança")
+    cp.register_command(tr("Dispositivos e segurança"), self.open_mobile_devices, "Segurança")
 
-    cp.add_category_header("--- ENGENHARIA E CÓDIGO ---")
-    cp.register_command("Tarefas do Engineer", self.open_missions, "Engenharia")
-    cp.register_command("Engenharia Autônoma · Sandbox", self.run_autonomous_engineering, "Engenharia")
-    cp.register_command("Código · GitHub", self.open_github, "Engenharia")
+    cp.add_category_header(tr("--- ENGENHARIA E CÓDIGO ---"))
+    cp.register_command(tr("Tarefas do Engineer"), self.open_missions, "Engenharia")
+    cp.register_command(tr("Engenharia Autônoma · Sandbox"), self.run_autonomous_engineering, "Engenharia")
+    cp.register_command(tr("Código · GitHub"), self.open_github, "Engenharia")
 
-    cp.add_category_header("--- UTILITÁRIOS E MÍDIA ---")
-    cp.register_command("Agenda e lembretes", self.open_agenda, "Utilitários")
-    cp.register_command("E-mail · Tuta", self.open_email_composer, "Utilitários")
-    cp.register_command("Visão ao vivo / Câmera", self.open_vision, "Utilitários")
-    cp.register_command("Alternar escuta por voz", self.toggle_voice, "Utilitários")
+    cp.add_category_header(tr("--- UTILITÁRIOS E MÍDIA ---"))
+    cp.register_command(tr("Agenda e lembretes"), self.open_agenda, "Utilitários")
+    cp.register_command(tr("E-mail · Tuta"), self.open_email_composer, "Utilitários")
+    cp.register_command(tr("Visão ao vivo / Câmera"), self.open_vision, "Utilitários")
+    cp.register_command(tr("Alternar escuta por voz"), self.toggle_voice, "Utilitários")
 
-    cp.add_category_header("--- SISTEMA ---")
+    cp.add_category_header(tr("--- SISTEMA ---"))
     cp.register_command("Configurações", self.open_settings, "Sistema")
-    cp.register_command("Chamada de Voz", self.open_call, "Sistema")
-    cp.register_command("Biblioteca de Memórias", self.open_library, "Sistema")
+    cp.register_command(tr("Chamada de Voz"), self.open_call, "Sistema")
+    cp.register_command(tr("Biblioteca de Memórias"), self.open_library, "Sistema")
     cp.register_command("Evolução do MARK", self.open_evolution, "Sistema")
-    cp.register_command("Plugins...", self.open_plugins, "Sistema")
-    cp.register_command("Iniciar MARK", self.start_mark, "Sistema")
-    cp.register_command("Limpar conversa", self.clear_memory, "Sistema")
+    cp.register_command(tr("Plugins..."), self.open_plugins, "Sistema")
+    cp.register_command(tr("Iniciar MARK"), self.start_mark, "Sistema")
+    cp.register_command(tr("Limpar conversa"), self.clear_memory, "Sistema")
 
   def _setup_tools_menu(self) -> None:
     self.tools_menu = QMenu(self.tools_button)

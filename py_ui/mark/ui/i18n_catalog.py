@@ -402,4 +402,23 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
         "无法完成响应：", "प्रतिक्रिया पूरी नहीं हो सकी:", "No se pudo completar la respuesta:",
         "Impossible de terminer la réponse :", "تعذّر إكمال الرد:",
     ),
+    "MENU DE COMANDO": (
+        "COMMAND MENU", "MENU DE COMANDO", "命令菜单", "कमांड मेनू", "MENÚ DE COMANDOS",
+        "MENU DE COMMANDES", "قائمة الأوامر",
+    ),
+    "[Esc] Fechar · [Enter] Executar": (
+        "[Esc] Close · [Enter] Run", "[Esc] Fechar · [Enter] Executar",
+        "[Esc] 关闭 · [Enter] 执行", "[Esc] बंद करें · [Enter] चलाएँ",
+        "[Esc] Cerrar · [Enter] Ejecutar", "[Esc] Fermer · [Entrée] Exécuter",
+        "[Esc] إغلاق · [Enter] تنفيذ",
+    ),
+    "Digite um comando ou ferramenta...": (
+        "Type a command or tool...", "Digite um comando ou ferramenta...", "输入命令或工具...",
+        "कमांड या उपकरण लिखें...", "Escribe un comando o herramienta...",
+        "Tapez une commande ou un outil...", "اكتب أمراً أو أداة...",
+    ),
+    "Generation cancelled": (
+        "Generation cancelled", "Geração cancelada", "生成已取消", "जनरेशन रद्द",
+        "Generación cancelada", "Génération annulée", "تم إلغاء التوليد",
+    ),
 }

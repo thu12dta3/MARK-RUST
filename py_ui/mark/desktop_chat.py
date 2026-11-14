@@ -209,6 +209,23 @@ class ChatMixin:
         messages.append({"role": "user", "content": [{"type": "text", "text": latest}]})
         return messages[-31:]
 
+    def _cancel_generation(self) -> None:
+        """Cancelamento imediato: sinaliza a task e restaura o estado pronto."""
+        for worker in list(getattr(self, "tasks", set())):
+            try:
+                worker.cancel()
+            except RuntimeError:
+                continue
+        self.busy = False
+        try:
+            if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
+                self.thinking_indicator.stop()
+                self.send_button.setText("\u2191")
+            self.attach_button.setDisabled(False)
+            self.connection_label.setText(tr("Generation cancelled"))
+        except RuntimeError:
+            pass
+
     def send_message(self, text: str | None = None):
         if isinstance(text, str):
             message = text.strip()
@@ -218,7 +235,10 @@ class ChatMixin:
             paths = list(self.attachments)
             self.input.clear()
 
-        if self.busy or (not message and not paths):
+        if self.busy:
+            self._cancel_generation()
+            return
+        if not message and not paths:
             return
         if paths and not message:
             message = "Analise os arquivos anexados e me ajude com eles."
@@ -280,13 +300,13 @@ class ChatMixin:
             preflight_ctx["cloud_authorized"] = True
 
         self.busy = True
-        self.send_button.setDisabled(True)
         self.attach_button.setDisabled(True)
         self.conversation_selector.setEnabled(False)
         self.new_conversation_button.setEnabled(False)
         self.remove_attachment_button.setDisabled(True)
         self.send_button.setIcon(QIcon())
-        self.connection_label.setText("MARK está pensando...")
+        self.send_button.setText("\u25A0")
+        self.connection_label.setText(tr("MARK está pensando..."))
         if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
             self.thinking_indicator.start()
         specialization = self.current_specialization
@@ -443,8 +463,7 @@ class ChatMixin:
                 self.gods_eye_widget.reset()
             if engineer_mode:
                 self.engineer_chat_badge.setText("ENGINEER · PERFIL DE CÓDIGO")
-            self.send_button.setDisabled(False)
-            self.attach_button.setDisabled(False)
+                self.attach_button.setDisabled(False)
             self.conversation_selector.setEnabled(True)
             self.new_conversation_button.setEnabled(True)
             self.send_button.setText("")
@@ -467,8 +486,7 @@ class ChatMixin:
                 self.gods_eye_widget.reset()
             if engineer_mode:
                 self.engineer_chat_badge.setText("ENGINEER · PERFIL DE CÓDIGO")
-            self.send_button.setDisabled(False)
-            self.attach_button.setDisabled(False)
+                self.attach_button.setDisabled(False)
             self.conversation_selector.setEnabled(True)
             self.new_conversation_button.setEnabled(True)
             self.remove_attachment_button.setEnabled(self.attachment_list.currentRow() >= 0)

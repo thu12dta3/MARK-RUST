@@ -15,7 +15,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
-from PyQt6.QtCore import QEvent, QObject, QTimer, Qt
+from PyQt6.QtCore import QEvent, QObject, QTimer, Qt, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication
 
 LOG_PATH = Path.home() / ".local" / "state" / "mark" / "crash_fault.log"
@@ -125,3 +125,18 @@ def install_wheel_guards(root: Any) -> int:
         count += 1
     setattr(root, "_wheel_guard", guard)
     return count
+
+
+def install_qt_message_handler() -> None:
+    """Grava avisos/fatais do Qt no crash log (inclui abort de QThread/QObject)."""
+
+    def handler(mode: Any, context: Any, message: str) -> None:
+        try:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with LOG_PATH.open("a", encoding="utf-8") as handle:
+                handle.write(f"\n=== qt {mode.name} ===\n{message}\n")
+        except OSError:
+            pass
+        sys.stderr.write(f"[MARK qt] {message}\n")
+
+    qInstallMessageHandler(handler)

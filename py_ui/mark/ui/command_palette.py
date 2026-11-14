@@ -3,6 +3,7 @@
 from typing import Any, Callable
 
 from PyQt6.QtCore import Qt
+from .i18n import tr
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -42,12 +43,13 @@ class CommandPaletteDialog(QDialog):
 
         # Header com indicador de atalho
         header = QHBoxLayout()
-        title = QLabel("MENU DE COMANDO")
+        title = QLabel(tr("MENU DE COMANDO"))
         title.setStyleSheet(
             f"color: {ThemeManager.TOKENS.ACCENT_CYAN}; font-family: {ThemeManager.TOKENS.FONT_FAMILY}; "
             "font-size: 11px; font-weight: 600; letter-spacing: 0.8px;"
         )
-        hint = QLabel("[Esc] Fechar · [Enter] Executar")
+        self.hint_label = QLabel(tr("[Esc] Fechar · [Enter] Executar"))
+        hint = self.hint_label
         hint.setStyleSheet(
             f"color: {ThemeManager.TOKENS.TEXT_SECONDARY}; font-family: {ThemeManager.TOKENS.FONT_FAMILY}; "
             "font-size: 11px; font-weight: 400;"
@@ -60,7 +62,7 @@ class CommandPaletteDialog(QDialog):
         # Campo de Busca
         self.search_input = QLineEdit()
         self.search_input.setObjectName("commandPaletteSearch")
-        self.search_input.setPlaceholderText("Digite um comando ou ferramenta...")
+        self.search_input.setPlaceholderText(tr("Digite um comando ou ferramenta..."))
         self.search_input.textChanged.connect(self._filter_items)
         layout.addWidget(self.search_input)
 
@@ -113,6 +115,15 @@ class CommandPaletteDialog(QDialog):
     def add_category_header(self, header: str) -> None:
         """Adiciona um cabecalho estilizado de separacao de categoria."""
         self._items_meta.append({"title": header, "category": header, "is_header": True})
+
+    def retranslate(self) -> None:
+        """Reaplica os textos traduziveis do palette."""
+        try:
+            self.hint_label.setText(tr("[Esc] Fechar · [Enter] Executar"))
+            self.search_input.setPlaceholderText(tr("Digite um comando ou ferramenta..."))
+            self.populate()
+        except RuntimeError:
+            return
 
     def populate(self) -> None:
         """Renderiza os comandos registrados na lista."""

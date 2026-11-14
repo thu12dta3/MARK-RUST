@@ -19,14 +19,20 @@ class WorkerMixin:
     def _finish_task(self, worker, callback, value):
         self.tasks.discard(worker)
         worker.deleteLater()
-        callback(value)
+        try:
+            callback(value)
+        except RuntimeError:
+            pass
         self._close_when_idle()
 
     def _finish_error(self, worker, callback, message):
         self.tasks.discard(worker)
         worker.deleteLater()
         if callback:
-            callback(message)
+            try:
+                callback(message)
+            except RuntimeError:
+                pass
         self._close_when_idle()
 
     def _close_when_idle(self):

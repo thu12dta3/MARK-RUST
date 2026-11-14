@@ -43,6 +43,7 @@ BANNED_MODEL_PATTERNS: tuple[str, ...] = (
     "qwen2.5-coder:7b",
     "gemini",
     "test-mark",
+    "mark-test-302m",
     "markvl-2.2b:2.2b",
 )
 

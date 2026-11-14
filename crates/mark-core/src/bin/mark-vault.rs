@@ -48,7 +48,7 @@ fn cmd_init(secrets: &[String]) -> Result<()> {
     if let Some(parent) = path.parent() {
         paths::ensure_dir(parent)?;
     }
-    let mut vault = Vault::create_fresh(&path, &password)?;
+    let vault = Vault::create_fresh(&path, &password)?;
     vault.save()?;
     emit(json!({
         "ok": true,
@@ -91,13 +91,113 @@ fn cmd_factory_reset(secrets: &[String]) -> Result<()> {
     if let Some(parent) = path.parent() {
         paths::ensure_dir(parent)?;
     }
-    let mut vault = Vault::factory_reset(&path, &password)?;
+    let vault = Vault::factory_reset(&path, &password)?;
     vault.save()?;
     emit(json!({
         "ok": true,
         "message": "cofre reinicializado do zero",
         "path": path.to_string_lossy().into_owned(),
     }));
+    Ok(())
+}
+
+fn cmd_list(secrets: &[String]) -> Result<()> {
+    let password = secrets.first().cloned().unwrap_or_default();
+    let path = paths::vault_file();
+    if !Vault::is_initialized(&path) {
+        emit(json!({"ok": false, "error": "vault-missing", "keys": []}));
+        return Ok(());
+    }
+    let mut vault = Vault::open(&path)?;
+    if let Err(error) = vault.unlock_verified(&password) {
+        emit(json!({"ok": false, "error": "bad-password", "message": format!("{error}"), "keys": []}));
+        return Ok(());
+    }
+    let mut keys = vault.keys();
+    keys.retain(|name| name != mark_core::vault::VERIFY_RECORD);
+    keys.sort();
+    emit(json!({"ok": true, "keys": keys, "count": keys.len()}));
+    Ok(())
+}
+
+fn cmd_set(secrets: &[String]) -> Result<()> {
+    let password = secrets.first().cloned().unwrap_or_default();
+    let name = secrets.get(1).cloned().unwrap_or_default();
+    let value = secrets.get(2).cloned().unwrap_or_default();
+    if name.trim().is_empty() {
+        bail!("nome da chave obrigatorio");
+    }
+    let path = paths::vault_file();
+    if !Vault::is_initialized(&path) {
+        emit(json!({"ok": false, "error": "vault-missing"}));
+        return Ok(());
+    }
+    let mut vault = Vault::open(&path)?;
+    if let Err(error) = vault.unlock_verified(&password) {
+        emit(json!({"ok": false, "error": "bad-password", "message": format!("{error}")}));
+        return Ok(());
+    }
+    vault.put(&name, value.as_bytes())?;
+    vault.save()?;
+    emit(json!({"ok": true, "name": name, "count": vault.keys().len()}));
+    Ok(())
+}
+
+fn cmd_get(secrets: &[String]) -> Result<()> {
+    let password = secrets.first().cloned().unwrap_or_default();
+    let name = secrets.get(1).cloned().unwrap_or_default();
+    let path = paths::vault_file();
+    if !Vault::is_initialized(&path) {
+        emit(json!({"ok": false, "error": "vault-missing"}));
+        return Ok(());
+    }
+    let mut vault = Vault::open(&path)?;
+    if let Err(error) = vault.unlock_verified(&password) {
+        emit(json!({"ok": false, "error": "bad-password", "message": format!("{error}")}));
+        return Ok(());
+    }
+    match vault.get_string(&name) {
+        Ok(value) => emit(json!({"ok": true, "name": name, "value": value})),
+        Err(error) => emit(json!({"ok": false, "error": "not-found", "message": format!("{error}")})),
+    }
+    Ok(())
+}
+
+fn cmd_delete(secrets: &[String]) -> Result<()> {
+    let password = secrets.first().cloned().unwrap_or_default();
+    let name = secrets.get(1).cloned().unwrap_or_default();
+    let path = paths::vault_file();
+    if !Vault::is_initialized(&path) {
+        emit(json!({"ok": false, "error": "vault-missing"}));
+        return Ok(());
+    }
+    let mut vault = Vault::open(&path)?;
+    if let Err(error) = vault.unlock_verified(&password) {
+        emit(json!({"ok": false, "error": "bad-password", "message": format!("{error}")}));
+        return Ok(());
+    }
+    let removed = vault.remove(&name)?;
+    vault.save()?;
+    emit(json!({"ok": true, "removed": removed, "count": vault.keys().len()}));
+    Ok(())
+}
+
+fn cmd_unlock(secrets: &[String]) -> Result<()> {
+    let password = secrets.first().cloned().unwrap_or_default();
+    let path = paths::vault_file();
+    if !Vault::is_initialized(&path) {
+        emit(json!({"ok": false, "error": "vault-missing"}));
+        return Ok(());
+    }
+    let mut vault = Vault::open(&path)?;
+    match vault.unlock_verified(&password) {
+        Ok(()) => {
+            let mut keys = vault.keys();
+            keys.retain(|name| name != mark_core::vault::VERIFY_RECORD);
+            emit(json!({"ok": true, "unlocked": true, "count": keys.len()}));
+        }
+        Err(error) => emit(json!({"ok": false, "error": "bad-password", "message": format!("{error}")})),
+    }
     Ok(())
 }
 
@@ -136,6 +236,11 @@ fn main() -> Result<()> {
         "init" => cmd_init(&secrets),
         "rekey" => cmd_rekey(&secrets),
         "factory-reset" => cmd_factory_reset(&secrets),
+        "list" => cmd_list(&secrets),
+        "set" => cmd_set(&secrets),
+        "get" => cmd_get(&secrets),
+        "delete" => cmd_delete(&secrets),
+        "unlock" => cmd_unlock(&secrets),
         "engine" => cmd_engine(),
         other => {
             emit(json!({"ok": false, "message": format!("comando desconhecido: {other}")}));

@@ -72,6 +72,17 @@ fn probe() -> Result<()> {
     Ok(())
 }
 
+/// Nome anunciado em /v1/models antes de os pesos carregarem.
+fn announced_model(args: &Args) -> String {
+    if let Some(path) = &args.gguf {
+        return path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "gguf".into());
+    }
+    args.model.clone().unwrap_or_else(|| "mark-svid-1bit".to_string())
+}
+
 fn build_engine(args: &Args) -> Result<(Engine, String)> {
     let config = EngineConfig::default();
     if let Some(path) = &args.gguf {
@@ -116,15 +127,26 @@ fn main() -> Result<()> {
     if args.probe {
         return probe();
     }
-    let (engine, model) = build_engine(&args)?;
     let addr = format!("{}:{}", args.host, args.port);
     let context = args.ctx.max(512);
-    eprintln!("mark-server: backend pronto, model={model}, ctx={context}, addr={addr}");
+    let model = announced_model(&args);
+    // O socket abre e responde /health e /v1/models imediatamente; os pesos
+    // carregam em background e a primeira inferencia aguarda o slot.
+    let (server, slot) = LocalServer::new_lazy(model.clone(), context);
+    eprintln!("mark-server: listening on {addr} model={model} ctx={context} (lazy engine load)");
+    let loader = std::thread::Builder::new()
+        .name("mark-engine-loader".into())
+        .spawn(move || match build_engine(&args) {
+            Ok((engine, label)) => {
+                let _ = slot.set(Arc::new(engine));
+                eprintln!("mark-server: engine ready ({label})");
+            }
+            Err(error) => eprintln!("mark-server: engine load failed: {error:#}"),
+        })?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(async move {
-        let server = LocalServer::new(Arc::new(engine), model, context);
-        server.serve(&addr).await
-    })
+    let result = runtime.block_on(async move { server.serve(&addr).await });
+    let _ = loader.join();
+    result
 }

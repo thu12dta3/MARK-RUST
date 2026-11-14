@@ -347,4 +347,39 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
     "Desligada": (
         "Off", "Desligada", "关闭", "बंद", "Apagado", "Désactivé", "متوقف",
     ),
+    "Offline": ("Offline", "Offline", "离线", "ऑफ़लाइन", "Desconectado", "Hors ligne", "غير متصل"),
+    "Ativa": ("Active", "Ativa", "已启用", "सक्रिय", "Activa", "Active", "مفعّلة"),
+    "MARK · Conectado": (
+        "MARK · Connected", "MARK · Conectado", "MARK · 已连接", "MARK · कनेक्टेड",
+        "MARK · Conectado", "MARK · Connecté", "MARK · متصل",
+    ),
+    "MARK · Offline": (
+        "MARK · Offline", "MARK · Offline", "MARK · 离线", "MARK · ऑफ़लाइन",
+        "MARK · Desconectado", "MARK · Hors ligne", "MARK · غير متصل",
+    ),
+    "MARK está pensando...": (
+        "MARK is thinking...", "MARK está pensando...", "MARK 正在思考...",
+        "MARK सोच रहा है...", "MARK está pensando...", "MARK réfléchit...",
+        "MARK يفكّر...",
+    ),
+    "Conectado · memória compartilhada ativa": (
+        "Connected · shared memory active", "Conectado · memória compartilhada ativa",
+        "已连接 · 共享记忆已启用", "कनेक्टेड · साझा मेमोरी सक्रिय",
+        "Conectado · memoria compartida activa", "Connecté · mémoire partagée active",
+        "متصل · الذاكرة المشتركة مفعّلة",
+    ),
+    "Offline · inicie o serviço do MARK": (
+        "Offline · start the MARK service", "Offline · inicie o serviço do MARK",
+        "离线 · 请启动 MARK 服务", "ऑफ़लाइन · MARK सेवा शुरू करें",
+        "Desconectado · inicie el servicio de MARK", "Hors ligne · démarrez le service MARK",
+        "غير متصل · ابدأ خدمة MARK",
+    ),
+    "MARK conectado": (
+        "MARK connected", "MARK conectado", "MARK 已连接", "MARK कनेक्टेड",
+        "MARK conectado", "MARK connecté", "MARK متصل",
+    ),
+    "Parar escuta": ("Stop listening", "Parar escuta", "停止聆听", "सुनना बंद करें", "Detener escucha", "Arrêter l'écoute", "إيقاف الاستماع"),
+    "Iniciar escuta": ("Start listening", "Iniciar escuta", "开始聆听", "सुनना शुरू करें", "Iniciar escucha", "Démarrer l'écoute", "بدء الاستماع"),
+    "Raciocínio Instantâneo ": ("Instant Reasoning ", "Raciocínio Instantâneo ", "即时推理 ", "तात्कालिक तर्क ", "Razonamiento instantáneo ", "Raisonnement instantané ", "استدلال فوري "),
+    "Deep Reasoning": ("Deep Reasoning", "Raciocínio Profundo", "深度推理", "गहन तर्क", "Razonamiento profundo", "Raisonnement approfondi", "استدلال عميق"),
 }

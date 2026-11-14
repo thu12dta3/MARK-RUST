@@ -5,7 +5,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="${MARK_RUST_ROOT:-$HERE}"
 PY_UI="$REPO/py_ui"
-PYTHON="${MARK_PYTHON:-$HOME/MARK/.venv/bin/python}"
+PYTHON="${MARK_PYTHON:-$REPO/.venv/bin/python}"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 

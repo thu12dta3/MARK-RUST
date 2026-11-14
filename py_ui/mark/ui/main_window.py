@@ -103,6 +103,8 @@ VOICE_SERVICE = "mark-voice.service"
 MOBILE_SERVICE = "mark-mobile.service"
 
 
+from PyQt6.QtGui import QIcon
+
 from .i18n import (
     LANGS,
     LANGUAGE_NAMES,
@@ -701,7 +703,9 @@ class MainWindow(
         self.language_selector.blockSignals(False)
         apply_layout_direction()
         retranslate_tree(self)
+        self._decorate_nav_labels()
         self._refresh_telemetry_texts()
+        self._refresh_dynamic_labels()
         self._sync_fullscreen_button()
 
     def _localize_routing_dynamically(self, text: str) -> str:
@@ -764,8 +768,59 @@ class MainWindow(
         """Traduz a interface inteira ao vivo quando o idioma muda."""
         apply_layout_direction()
         retranslate_tree(self)
+        self._decorate_nav_labels()
         self._refresh_telemetry_texts()
+        self._refresh_dynamic_labels()
         self._sync_fullscreen_button()
+
+    def _decorate_nav_labels(self) -> None:
+        """Mantem os icones ao lado dos rotulos traduzidos da sidebar."""
+        pairs = (
+            ("chat_nav_button", "\U0001F4AC", "Geral", ""),
+            ("engineer_button", "\U0001F6E0", "Engenheiro", ""),
+            ("professor_button", "\U0001F393", "Professor", ""),
+            ("library_nav_button", "\U0001F4CE", "Biblioteca", ""),
+            ("evolution_nav_button", "\u2756", "Evolução", ""),
+            ("call_nav_button", "\U0001F4DE", "Chamada de Voz", ""),
+            ("devices_nav_button", "\U0001F4F1", "Dispositivos", ""),
+            ("tools_button", "\u25EB", "Ferramentas", " \u25BE"),
+            ("settings_nav_button", "\u2699", "Configurações", ""),
+        )
+        for attribute, glyph, key, suffix in pairs:
+            widget = getattr(self, attribute, None)
+            if widget is not None:
+                widget.setText(f"{glyph} {tr(key)}{suffix}")
+
+    def _refresh_dynamic_labels(self) -> None:
+        """Reaplica traducoes montadas fora do retranslate estatico."""
+        if hasattr(self, "sidebar_new_chat_btn"):
+            self.sidebar_new_chat_btn.setText(tr("+  Nova conversa (Engineer)"))
+        if hasattr(self, "composer_hint"):
+            self.composer_hint.setText(tr("Enter envia · Shift+Enter nova linha"))
+        if hasattr(self, "connection_label") and not self.busy:
+            self.connection_label.setText(tr("Conectado · memória compartilhada ativa"))
+        if hasattr(self, "routing_target_badge"):
+            self._update_routing_target_badge()
+        if hasattr(self, "input"):
+            self.input.setPlaceholderText(
+                tr("Escreva para o MARK ou arraste um arquivo aqui... (Shift+Enter nova linha)")
+            )
+
+    def _ensure_local_mark_model(self) -> None:
+        """Coloca o Mark-Bin-32B nativo no seletor quando o checkpoint existe."""
+        try:
+            from ..rust_bridge import rust as _rust
+        except ImportError:
+            return
+        if not hasattr(self, "model_selector"):
+            return
+        if any("Mark-Bin-32B" in self.model_selector.itemText(i) for i in range(self.model_selector.count())):
+            return
+        status = _rust.engine_status()
+        if not status.get("checkpoint"):
+            return
+        self.model_selector.insertItem(0, "Mark-Bin-32B (1-Bit W1A4, 2M context)", "mark")
+        self.model_selector.setCurrentIndex(0)
 
     def _build_chat_page(self) -> QWidget:
         content = QWidget()
@@ -860,8 +915,13 @@ class MainWindow(
 
         self.refresh_button = QPushButton()
         self.refresh_button.setObjectName("iconButton")
-        self.refresh_button.setIcon(_mark_icon("refresh"))
-        self.refresh_button.setIconSize(QSize(17, 17))
+        self.refresh_button.setIcon(QIcon())
+        self.refresh_button.setText("↻")
+        self.refresh_button.setStyleSheet(
+            "QPushButton#iconButton { background: #16191D; color: #EDEDED; border: 1px solid #1E2228;"
+            " border-radius: 8px; padding: 3px 10px; font-size: 15px; font-weight: 600; }"
+            "QPushButton#iconButton:hover { border-color: #00D8F6; color: #00D8F6; }"
+        )
         self.refresh_button.setToolTip("Atualizar estado do MARK")
         self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_button.clicked.connect(self.refresh_status)
@@ -1018,8 +1078,8 @@ class MainWindow(
 
         self.attach_button = QPushButton()
         self.attach_button.setObjectName("attachButton")
-        self.attach_button.setIcon(_mark_icon("attach"))
-        self.attach_button.setIconSize(QSize(20, 20))
+        self.attach_button.setIcon(QIcon())
+        self.attach_button.setText("📎")
         self.attach_button.setToolTip("Anexar arquivos (imagens, documentos, código)")
         self.attach_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.attach_button.setFixedHeight(40)
@@ -1065,6 +1125,7 @@ class MainWindow(
         self.model_selector = ProviderSelectorWidget()
         self.model_selector.setObjectName("modelSelector")
         self.model_selector.populate_from_config()
+        self._ensure_local_mark_model()
 
         self.processing_badge = QLabel(self.model_selector.processing_type())
         self.processing_badge.setObjectName("processingBadge")
@@ -1102,8 +1163,8 @@ class MainWindow(
         # Botão de Envio integrado em cápsula ciano
         self.send_button = QPushButton()
         self.send_button.setObjectName("sendButton")
-        self.send_button.setIcon(_mark_icon("send"))
-        self.send_button.setIconSize(QSize(18, 18))
+        self.send_button.setIcon(QIcon())
+        self.send_button.setText("↑")
         self.send_button.setToolTip("Enviar mensagem")
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.setStyleSheet(
@@ -1782,23 +1843,27 @@ class MainWindow(
 
         def update(states):
             if hasattr(self, "api_status") and hasattr(self.api_status, "value_label"):
-                self.api_status.value_label.setText("Conectado" if states["reachable"] else "Offline")
+                self.api_status.value_label.setText(tr("Conectado") if states["reachable"] else tr("Offline"))
                 self.api_status.value_label.setStyleSheet("color: #3FB950" if states["reachable"] else "color: #F85149")
             if hasattr(self, "api_status_label"):
-                self.api_status_label.setText("MARK · Conectado" if states["reachable"] else "MARK · Offline")
+                self.api_status_label.setText(tr("MARK · Conectado") if states["reachable"] else tr("MARK · Offline"))
                 self.api_status_label.setStyleSheet("color: #3FB950; font-size: 11px;" if states["reachable"] else "color: #F85149; font-size: 11px;")
             if hasattr(self, "connect_button"):
-                self.connect_button.setText("MARK conectado" if states["reachable"] else "Iniciar MARK")
+                self.connect_button.setText(tr("MARK conectado") if states["reachable"] else tr("Iniciar MARK"))
                 self.connect_button.setEnabled(not states["reachable"])
             self.voice_active = states["voice"]
             if hasattr(self, "voice_status") and hasattr(self.voice_status, "value_label"):
-                self.voice_status.value_label.setText("Ativa" if self.voice_active else "Desligada")
+                self.voice_status.value_label.setText(tr("Ativa") if self.voice_active else tr("Desligada"))
                 self.voice_status.value_label.setStyleSheet("color: #3FB950" if self.voice_active else "color: #8B949E")
             if hasattr(self, "voice_button"):
-                self.voice_button.setText("Parar escuta" if self.voice_active else "Iniciar escuta")
+                self.voice_button.setText(tr("Parar escuta") if self.voice_active else tr("Iniciar escuta"))
             if hasattr(self, "connection_label"):
                 self.connection_label.setText(
-                    "MARK está pensando..." if self.busy else "Conectado · memória compartilhada ativa" if states["reachable"] else "Offline · inicie o serviço do MARK"
+                    tr("MARK está pensando...")
+                    if self.busy
+                    else tr("Conectado · memória compartilhada ativa")
+                    if states["reachable"]
+                    else tr("Offline · inicie o serviço do MARK")
                 )
 
         self._task(check, update)

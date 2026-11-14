@@ -45,6 +45,7 @@ class RustBridge:
         self._server: subprocess.Popen[bytes] | None = None
         self._server_port = 0
         self._server_log: Path | None = None
+        self._master_password = ""
 
     # ---------------------------------------------------------------- helpers
     def binary(self, name: str) -> Path | None:
@@ -108,13 +109,60 @@ class RustBridge:
         return payload
 
     def vault_init(self, password: str) -> dict[str, Any]:
-        return self._json(self._run(VAULT_BIN, ["init", "--json"], stdin=password, timeout=180))
+        result = self._json(self._run(VAULT_BIN, ["init", "--json"], stdin=password, timeout=180))
+        if result.get("ok"):
+            self._master_password = password
+        return result
+
+    def vault_unlock(self, password: str) -> dict[str, Any]:
+        """Valida a senha mestra no cofre Rust e abre a sessao local."""
+        result = self._json(self._run(VAULT_BIN, ["unlock", "--json"], stdin=password, timeout=180))
+        self._master_password = password if result.get("ok") else ""
+        return result
+
+    def vault_lock(self) -> dict[str, Any]:
+        """Encerra a sessao local sem tocar no cofre em disco."""
+        self._master_password = ""
+        return {"ok": True, "message": "vault session closed"}
+
+    def vault_list(self) -> dict[str, Any]:
+        """Lista as chaves guardadas dentro do cofre Rust."""
+        if not self._master_password:
+            return {"ok": False, "error": "vault-locked", "keys": []}
+        return self._json(self._run(VAULT_BIN, ["list", "--json"], stdin=self._master_password, timeout=180))
+
+    def vault_set(self, name: str, value: str) -> dict[str, Any]:
+        """Grava um segredo cifrado dentro do cofre Rust."""
+        if not self._master_password:
+            return {"ok": False, "error": "vault-locked"}
+        payload = "\n".join([self._master_password, name, value])
+        return self._json(self._run(VAULT_BIN, ["set", "--json"], stdin=payload, timeout=180))
+
+    def vault_get(self, name: str) -> dict[str, Any]:
+        """Le um segredo do cofre Rust."""
+        if not self._master_password:
+            return {"ok": False, "error": "vault-locked"}
+        payload = "\n".join([self._master_password, name])
+        return self._json(self._run(VAULT_BIN, ["get", "--json"], stdin=payload, timeout=180))
+
+    def vault_delete(self, name: str) -> dict[str, Any]:
+        """Remove um segredo do cofre Rust."""
+        if not self._master_password:
+            return {"ok": False, "error": "vault-locked"}
+        payload = "\n".join([self._master_password, name])
+        return self._json(self._run(VAULT_BIN, ["delete", "--json"], stdin=payload, timeout=180))
 
     def vault_rekey(self, current: str, new: str) -> dict[str, Any]:
-        return self._json(self._run(VAULT_BIN, ["rekey", "--json"], stdin=f"{current}\n{new}", timeout=300))
+        result = self._json(self._run(VAULT_BIN, ["rekey", "--json"], stdin=f"{current}\n{new}", timeout=300))
+        if result.get("ok"):
+            self._master_password = new
+        return result
 
     def vault_factory_reset(self, password: str) -> dict[str, Any]:
-        return self._json(self._run(VAULT_BIN, ["factory-reset", "--json"], stdin=password, timeout=300))
+        result = self._json(self._run(VAULT_BIN, ["factory-reset", "--json"], stdin=password, timeout=300))
+        if result.get("ok"):
+            self._master_password = password
+        return result
 
     # ----------------------------------------------------------- local server
     def _port_free(self, port: int) -> bool:

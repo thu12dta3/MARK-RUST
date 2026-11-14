@@ -1447,7 +1447,7 @@ class ModelsHubWidget(QWidget):
         return page
 
     def _backend_name(self) -> str:
-        return tr("Rust engine (mark-server)") if self._rust_server_binary() else tr("Python fallback server")
+        return tr("Rust engine (mark-server)") if self._rust_server_binary() else tr("mark-server binary missing: build the Rust workspace")
 
     def _rust_server_binary(self) -> bool:
         """True only when the compiled ``mark-server`` binary is reachable."""
@@ -1495,7 +1495,7 @@ class ModelsHubWidget(QWidget):
     def _local_server_status(self) -> dict[str, Any]:
         backend = self._active_backend
         if backend is None:
-            backend = "rust" if self._rust_server_binary() else "python"
+            backend = "rust"
         if backend == "rust" and self._rust_server_binary():
             try:
                 status = rust_client.server_status()
@@ -1521,9 +1521,9 @@ class ModelsHubWidget(QWidget):
         running = bool(status.get("running"))
         action = "stop" if running else "start"
         if running:
-            backend = str(status.get("backend") or "python")
+            backend = "rust"
         else:
-            backend = "rust" if self._rust_server_binary() else "python"
+            backend = "rust"
         worker = ServerActionWorker(action, backend, self.srv_host.currentText(), int(self.srv_port.value()))
         self._server_action = action
         worker.finishedAction.connect(self._on_server_action_done)

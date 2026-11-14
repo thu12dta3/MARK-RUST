@@ -1144,6 +1144,8 @@ class SettingsWidget(QWidget):
             return False
 
         result = rust.vault_init(password)
+        if result.get("ok"):
+            rust.vault_unlock(password)
         message = str(result.get("message") or "").strip()
         if result.get("ok"):
             self.new_password_input.clear()
@@ -1201,13 +1203,26 @@ class SettingsWidget(QWidget):
             self.refresh_vault_state()
             return False
 
+        result = rust.vault_unlock(password)
+        if not result.get("ok"):
+            self._set_feedback(
+                self.vault_feedback_label,
+                tr("The Rust vault rejected the master password: {detail}").format(
+                    detail=str(result.get("message") or result.get("error") or "")
+                ),
+                "#F85149",
+            )
+            return False
         self.unlock_password_input.clear()
         self._vault_unlocked = True
         self.refresh_vault_state()
+        self.refresh_keys_table()
         self._set_feedback(
             self.vault_feedback_label,
-            tr("Session opened. The Rust core checks the master password on every read and write of the vault."),
-            "#8B949E",
+            tr("Vault unlocked: {count} sealed entries opened by the Rust core.").format(
+                count=int(result.get("count") or 0)
+            ),
+            "#3FB950",
         )
         return True
 
@@ -1255,6 +1270,8 @@ class SettingsWidget(QWidget):
             return False
 
         result = rust.vault_rekey(current, new_password)
+        if result.get("ok"):
+            self.refresh_keys_table()
         message = str(result.get("message") or "").strip()
         if result.get("ok"):
             entries = int(result.get("entries") or self._vault_status().get("entries") or 0)
@@ -1321,6 +1338,8 @@ class SettingsWidget(QWidget):
             return False
 
         result = rust.vault_factory_reset(password)
+        if result.get("ok"):
+            self.refresh_keys_table()
         message = str(result.get("message") or "").strip()
         if result.get("ok"):
             self.reset_new_password_input.clear()
@@ -1463,44 +1482,27 @@ class SettingsWidget(QWidget):
             self.provider_combo.setEditText(provider_name)
 
     def refresh_keys_table(self) -> None:
-        """Fill the key table from the encrypted store, masked, only when open."""
-        if not self._vault_unlocked:
-            self.keys_table.setRowCount(0)
-            return
-        try:
-            raw_vault = self.vault._read_vault()
-        except Exception as exc:
-            logger.error("Failed to read the vault for the table: %s", exc)
-            raw_vault = {}
-
+        """Preenche a tabela com as chaves reais do cofre Rust, mascaradas."""
         self.keys_table.setRowCount(0)
-        row = 0
-        for provider_key, entry in sorted(raw_vault.items()):
-            display_name = provider_key.upper()
-            secret_key = ""
-            if isinstance(entry, dict):
-                secret_key = entry.get("key", "")
-                display_name = entry.get("metadata", {}).get("display_name", display_name)
-            elif isinstance(entry, str):
-                secret_key = entry
-
-            masked = mask_api_key(secret_key)
+        if not self._vault_unlocked:
+            return
+        listing = rust.vault_list()
+        if not listing.get("ok"):
+            return
+        for row, name in enumerate(listing.get("keys", [])):
+            entry = rust.vault_get(name)
+            secret = str(entry.get("value") or "") if entry.get("ok") else ""
             self.keys_table.insertRow(row)
-
-            item_provider = QTableWidgetItem(display_name)
+            item_provider = QTableWidgetItem(str(name).upper())
             item_provider.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-
-            item_key = QTableWidgetItem(masked)
+            item_key = QTableWidgetItem(mask_api_key(secret))
             item_key.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-
-            item_sec = QTableWidgetItem("AES-256-GCM (0600)")
+            item_sec = QTableWidgetItem(tr("Argon2id + AES-256-GCM (Rust)"))
             item_sec.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             item_sec.setForeground(Qt.GlobalColor.darkGray)
-
             self.keys_table.setItem(row, 0, item_provider)
             self.keys_table.setItem(row, 1, item_key)
             self.keys_table.setItem(row, 2, item_sec)
-            row += 1
 
     def save_key(self) -> bool:
         """Store a key for any provider name, without a hardcoded provider list."""
@@ -1527,7 +1529,9 @@ class SettingsWidget(QWidget):
             return False
 
         try:
-            self.vault.set_key(provider, key_val, metadata={"display_name": provider})
+            result = rust.vault_set(provider.upper(), key_val)
+            if not result.get("ok"):
+                raise RuntimeError(str(result.get("message") or result.get("error") or "vault-set-failed"))
             self.key_input.clear()
             self.refresh_keys_table()
             self._set_feedback(
@@ -1564,7 +1568,8 @@ class SettingsWidget(QWidget):
             return False
 
         try:
-            removed = self.vault.delete_key(provider)
+            deleted = rust.vault_delete(provider.upper())
+            removed = bool(deleted.get("removed"))
             self.refresh_keys_table()
             if removed:
                 self._set_feedback(

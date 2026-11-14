@@ -144,6 +144,11 @@ def apply_layout_direction() -> None:
     app.setLayoutDirection(Qt.LayoutDirection.RightToLeft if is_rtl() else Qt.LayoutDirection.LeftToRight)
 
 
+def _tab_label(text: str) -> str:
+    """Traduz e escapa o & para que o titulo da aba nao vire atalho sublinhado."""
+    return tr(text.replace("&&", "&")).replace("&", "&&")
+
+
 def _translate_widget(widget: QWidget) -> None:
     text: str | None = None
     setter: Callable[[str], Any] | None = None
@@ -169,7 +174,7 @@ def _translate_children(node: QWidget) -> None:
     _translate_widget(node)
     if isinstance(node, QTabWidget):
         for index in range(node.count()):
-            node.setTabText(index, tr(node.tabText(index)))
+            node.setTabText(index, _tab_label(node.tabText(index)))
     if isinstance(node, QComboBox):
         for index in range(node.count()):
             node.setItemText(index, tr(node.itemText(index)))
@@ -177,7 +182,10 @@ def _translate_children(node: QWidget) -> None:
         _translate_widget(child)
         if isinstance(child, QTabWidget):
             for index in range(child.count()):
-                child.setTabText(index, tr(child.tabText(index)))
+                child.setTabText(index, _tab_label(child.tabText(index)))
+        if isinstance(child, QComboBox):
+            for index in range(child.count()):
+                child.setItemText(index, tr(child.itemText(index)))
     if hasattr(node, "menu") and callable(node.menu):  # QToolButton popups
         menu = node.menu()
         if menu is not None:

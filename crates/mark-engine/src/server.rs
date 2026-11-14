@@ -20,9 +20,27 @@ pub struct ModelCard {
     pub context_length: u32,
 }
 
+/// Motor do servidor: pronto, ou carregando em background sem bloquear o HTTP.
+pub enum EngineSlot {
+    /// Motor ja carregado em memoria.
+    Ready(Arc<Engine>),
+    /// Motor ainda carregando; os handlers de inferencia aguardam o slot.
+    Loading(Arc<std::sync::OnceLock<Arc<Engine>>>),
+}
+
+impl EngineSlot {
+    /// Devolve o motor quando ele ja estiver disponivel.
+    pub fn try_get(&self) -> Option<Arc<Engine>> {
+        match self {
+            EngineSlot::Ready(engine) => Some(engine.clone()),
+            EngineSlot::Loading(cell) => cell.get().cloned(),
+        }
+    }
+}
+
 /// Estado compartilhado do servidor.
 pub struct LocalServer {
-    engine: Arc<Engine>,
+    engine: Arc<EngineSlot>,
     model: String,
     context_length: u32,
     shutdown: Arc<AtomicBool>,
@@ -74,11 +92,29 @@ impl LocalServer {
     /// Cria o servidor para um motor ja carregado.
     pub fn new(engine: Arc<Engine>, model: impl Into<String>, context_length: u32) -> Self {
         Self {
-            engine,
+            engine: Arc::new(EngineSlot::Ready(engine)),
             model: model.into(),
             context_length,
             shutdown: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Sobe o servidor respondendo de imediato e recebe o motor depois pelo slot.
+    ///
+    /// `/health` e `/v1/models` nunca esperam o carregamento dos pesos; apenas
+    /// `/v1/chat/completions` aguarda o motor ficar disponivel.
+    pub fn new_lazy(
+        model: impl Into<String>,
+        context_length: u32,
+    ) -> (Self, Arc<std::sync::OnceLock<Arc<Engine>>>) {
+        let cell = Arc::new(std::sync::OnceLock::new());
+        let server = Self {
+            engine: Arc::new(EngineSlot::Loading(cell.clone())),
+            model: model.into(),
+            context_length,
+            shutdown: Arc::new(AtomicBool::new(false)),
+        };
+        (server, cell)
     }
 
     /// Handle de parada usado pela UI.
@@ -205,7 +241,7 @@ fn split_messages(messages: &[WireMessage]) -> (Option<String>, String, Vec<(Str
 
 async fn handle(
     mut stream: TcpStream,
-    engine: Arc<Engine>,
+    engine: Arc<EngineSlot>,
     model: String,
     context_length: u32,
 ) -> Result<()> {
@@ -246,6 +282,25 @@ async fn handle(
             return write_json(&mut stream, 404, &payload.to_string()).await;
         }
         let limit = req.max_tokens.unwrap_or(0) as usize;
+        // O socket e as rotas de status ficam instantaneos; so a inferencia espera
+        // o carregamento do motor (lazy load), com teto de 300 s.
+        let mut waited = 0u32;
+        let engine_ready = loop {
+            if let Some(ready) = engine.try_get() {
+                break Some(ready);
+            }
+            if waited >= 600 {
+                break None;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            waited += 1;
+        };
+        let Some(engine) = engine_ready else {
+            let payload = serde_json::json!({
+                "error": {"message": "motor ainda carregando os pesos; tente novamente em instantes"}
+            });
+            return write_json(&mut stream, 503, &payload.to_string()).await;
+        };
         let (system, prompt, turns) = split_messages(&req.messages);
         if prompt.trim().is_empty() {
             let payload = serde_json::json!({"error": {"message": "mensagem de usuario ausente"}});

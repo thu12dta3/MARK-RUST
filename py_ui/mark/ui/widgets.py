@@ -192,7 +192,7 @@ class ErrorCardWidget(QFrame):
   def __init__(
     self,
     error_text: str,
-    title: str = "Falha no Processamento",
+    title: str = tr("Falha no Processamento"),
     retry_callback: Any = None,
     switch_model_callback: Any = None,
     parent: QWidget | None = None,
@@ -259,7 +259,7 @@ class ErrorCardWidget(QFrame):
     actions_layout.setContentsMargins(0, 4, 0, 0)
     actions_layout.setSpacing(8)
 
-    self.retry_button = QPushButton("Tentar Novamente")
+    self.retry_button = QPushButton(tr("Tentar Novamente"))
     self.retry_button.setObjectName("retryButton")
     self.retry_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.retry_button.setStyleSheet("""
@@ -284,7 +284,7 @@ class ErrorCardWidget(QFrame):
     self.retry_button.clicked.connect(self.retry_requested.emit)
     actions_layout.addWidget(self.retry_button)
 
-    self.switch_model_button = QPushButton("Alternar Modelo/Provedor")
+    self.switch_model_button = QPushButton(tr("Alternar Modelo/Provedor"))
     self.switch_model_button.setObjectName("switchModelButton")
     self.switch_model_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.switch_model_button.setStyleSheet("""

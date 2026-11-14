@@ -1,6 +1,7 @@
 import os
 
 from PyQt6.QtCore import Qt, QSize
+from .ui.i18n import tr
 from PyQt6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QProgressBar, QPushButton,
     QScrollArea, QVBoxLayout, QWidget,
@@ -280,7 +281,12 @@ class NavigationMixin:
         self.current_specialization = specialization
         self._set_active_area(specialization)
         if hasattr(self, "engineer_bar"):
-            self.engineer_bar.setVisible(specialization == "engineer")
+            empty_state = getattr(self, "empty_state", None)
+            try:
+                empty_chat = empty_state is not None and empty_state.isVisible()
+            except RuntimeError:
+                empty_chat = False
+            self.engineer_bar.setVisible(specialization == "engineer" and empty_chat)
         if hasattr(self, "_apply_role_selection"):
             self._apply_role_selection(specialization)
         if hasattr(self, "_update_mode_empty_state"):
@@ -319,7 +325,7 @@ class NavigationMixin:
                     return
                 self.current_project_id = project_id
         self.page_heading.setText(
-            {"general": "Geral", "engineer": "Engenheiro", "professor": "Professor", "vision": "Vision"}[specialization]
+            tr({"general": "Geral", "engineer": "Engenheiro", "professor": "Professor", "vision": "Vision"}[specialization])
         )
         if specialization == "general":
             self.current_conversation_id = "general-main"

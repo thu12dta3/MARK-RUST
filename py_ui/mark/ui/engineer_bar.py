@@ -71,6 +71,7 @@ class EngineerBar(QFrame):
 
         self.permission_combo = QComboBox()
         self.permission_combo.setCurrentIndex(2)
+        self.permission_combo.setVisible(False)
         for value, label in PERMISSIONS:
             self.permission_combo.addItem(tr(label), value)
         self.permission_combo.setStyleSheet(
@@ -80,7 +81,6 @@ class EngineerBar(QFrame):
         self.permission_combo.currentIndexChanged.connect(
             lambda _index: self.permission_changed.emit(str(self.permission_combo.currentData()))
         )
-        layout.addWidget(self.permission_combo)
 
         self.web_button = QPushButton()
         self.web_button.setCheckable(True)
@@ -121,7 +121,8 @@ class EngineerBar(QFrame):
         self.web_changed.emit(enabled)
 
     def permission_mode(self) -> str:
-        return str(self.permission_combo.currentData() or "suggest")
+        """Modo Engineer opera sempre em Full Access dentro do bwrap."""
+        return "full-auto"
 
     def web_access(self) -> bool:
         return bool(self.web_button.isChecked())

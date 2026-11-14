@@ -383,4 +383,23 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
     "Raciocínio Instantâneo ": ("Instant Reasoning ", "Raciocínio Instantâneo ", "即时推理 ", "तात्कालिक तर्क ", "Razonamiento instantáneo ", "Raisonnement instantané ", "استدلال فوري "),
     "Deep Reasoning": ("Deep Reasoning", "Raciocínio Profundo", "深度推理", "गहन तर्क", "Razonamiento profundo", "Raisonnement approfondi", "استدلال عميق"),
     "Você": ("You", "Você", "你", "आप", "Tú", "Vous", "أنت"),
+    "Vision": ("Vision", "Visão", "视觉", "विज़न", "Visión", "Vision", "الرؤية"),
+    "Falha no Processamento": (
+        "Processing failed", "Falha no Processamento", "处理失败", "प्रसंस्करण विफल",
+        "Fallo en el procesamiento", "Échec du traitement", "فشل المعالجة",
+    ),
+    "Tentar Novamente": (
+        "Try Again", "Tentar Novamente", "重试", "पुनः प्रयास करें", "Reintentar", "Réessayer",
+        "إعادة المحاولة",
+    ),
+    "Alternar Modelo/Provedor": (
+        "Switch model/provider", "Alternar Modelo/Provedor", "切换模型/提供方",
+        "मॉडल/प्रदाता बदलें", "Cambiar modelo/proveedor", "Changer de modèle/fournisseur",
+        "تغيير النموذج/المزوّد",
+    ),
+    "Não foi possível concluir a resposta:": (
+        "Could not complete the response:", "Não foi possível concluir a resposta:",
+        "无法完成响应：", "प्रतिक्रिया पूरी नहीं हो सकी:", "No se pudo completar la respuesta:",
+        "Impossible de terminer la réponse :", "تعذّر إكمال الرد:",
+    ),
 }

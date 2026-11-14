@@ -599,8 +599,8 @@ class MainWindow(
     self.evolution_nav_button.setIconSize(QSize(16, 16))
     self.evolution_nav_button.setFixedHeight(32)
     self.evolution_nav_button.setCursor(Qt.CursorShape.PointingHandCursor)
+    self.evolution_nav_button.setVisible(False)
     self.evolution_nav_button.clicked.connect(self.open_evolution)
-    sidebar_layout.addWidget(self.evolution_nav_button)
 
     # Botão "Chamada de Voz" (muda para o índice 2 do QStackedWidget)
     self.call_nav_button = QPushButton("Chamada de Voz")
@@ -735,6 +735,11 @@ class MainWindow(
     self._frame_ms = frame_interval_ms()
     start_background_caches()
     self.setWindowTitle("MARK")
+    try:
+      from .safety import install_wheel_guards
+      install_wheel_guards(self)
+    except Exception:
+      pass
     self._install_shortcuts()
     set_language(saved_language(), notify=False)
     self.language_selector.blockSignals(True)
@@ -762,6 +767,20 @@ class MainWindow(
       if fragment in text:
         text = text.replace(fragment, tr(key))
     return text
+
+  def _on_model_selected(self) -> None:
+    """Mark-Bin-32B implica o motor Rust; sem cascata de sinais."""
+    selector = getattr(self, "model_selector", None)
+    if selector is None:
+      return
+    if str(selector.currentData() or "") != "mark":
+      return
+    if getattr(self, "active_engine", "rust") == "rust":
+      return
+    try:
+      self._select_engine("rust", "Rust 1-Bit Engine (mark-server)")
+    except Exception:
+      pass
 
   def _select_engine(self, key: str, label: str, persist: bool = True) -> None:
       """Troca o motor local ativo e persiste a escolha."""
@@ -896,7 +915,14 @@ class MainWindow(
           return
       for index in range(self.model_selector.count()):
           if primary.lower() in self.model_selector.itemText(index).lower():
+              if self.model_selector.currentIndex() == index:
+                  return
+              self.model_selector.blockSignals(True)
               self.model_selector.setCurrentIndex(index)
+              self.model_selector.blockSignals(False)
+              from .perf import defer
+              defer(self._update_ctx_label, 0)
+              defer(self._update_routing_target_badge, 0)
               return
 
   def _alive_label(self, attribute: str) -> Any:
@@ -1021,7 +1047,7 @@ class MainWindow(
       colour = ACTIVE if active_map.get(active) == attribute else IDLE
       widget.setIcon(vector_icon(glyph, colour, 16))
       widget.setIconSize(QSize(16, 16))
-      suffix = " ▾" if attribute == "tools_button" else ""
+      suffix = ""
       widget.setText(f"{tr(key)}{suffix}")
 
   def _refresh_dynamic_labels(self) -> None:
@@ -1271,12 +1297,12 @@ class MainWindow(
     self.conversation_selector.hide()
     top.addWidget(self.conversation_selector)
 
-    self.new_conversation_button = QPushButton("Nova conversa")
+    self.new_conversation_button = QPushButton(tr("Nova conversa"), self.chat_page_host)
     self.new_conversation_button.setObjectName("headerAction")
     self.new_conversation_button.clicked.connect(self._create_specialized_conversation)
     self.new_conversation_button.hide()
 
-    self.delete_conversation_button = QPushButton()
+    self.delete_conversation_button = QPushButton(parent=self.chat_page_host)
     self.delete_conversation_button.setObjectName("iconButton")
     self.delete_conversation_button.setIcon(_mark_icon("trash"))
     self.delete_conversation_button.setIconSize(QSize(16, 16))
@@ -1295,7 +1321,6 @@ class MainWindow(
     self.call_button.setToolTip("Iniciar chamada de voz in-app")
     self.call_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.call_button.clicked.connect(self._open_voice_call)
-    top.addWidget(self.call_button)
 
     # Botão Configurações no cabeçalho (muda para o índice 1 do QStackedWidget)
     self.settings_button = QPushButton("Configurações")
@@ -1320,7 +1345,6 @@ class MainWindow(
     self.refresh_button.setToolTip("Atualizar estado do MARK")
     self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.refresh_button.clicked.connect(self.refresh_status)
-    top.addWidget(self.refresh_button)
 
     # Tela cheia apenas por atalho (F11), sem botao no header
     # Seletor de idioma ao vivo (English default + 6 locales)
@@ -1648,6 +1672,8 @@ class MainWindow(
     self.routing_target_badge.setObjectName("routingTargetBadge")
     inferior_row.addWidget(self.routing_target_badge)
 
+    self.model_selector.currentIndexChanged.connect(lambda _i: self._on_model_selected())
+    self.model_selector.activated.connect(lambda _i: self._on_model_selected())
     self.model_selector.currentIndexChanged.connect(lambda _i: self._update_routing_target_badge())
     self.model_selector.currentIndexChanged.connect(lambda _i: self._update_ctx_label())
     self.input.textChanged.connect(self._update_routing_target_badge)
@@ -2187,7 +2213,7 @@ class MainWindow(
     if hasattr(self, "sidebar_new_chat_btn") and self.sidebar_new_chat_btn is not None:
       self.sidebar_new_chat_btn.setVisible(self.current_specialization == "engineer")
     if hasattr(self, "delete_conversation_button") and self.delete_conversation_button is not None:
-      self.delete_conversation_button.setVisible(self.current_specialization != "general")
+      self.delete_conversation_button.setVisible(False)
     if self.current_specialization == "professor" and hasattr(self, "new_conversation_button"):
       self.new_conversation_button.hide()
 

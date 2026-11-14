@@ -55,7 +55,7 @@ class HistoryMixin:
                 self.current_conversation_id = "general-main"
             else:
                 self.conversation_selector.show()
-                self.new_conversation_button.show()
+                self.new_conversation_button.setVisible(False)
                 wanted = select_id or self.current_conversation_id
                 index = self.conversation_selector.findData(wanted)
                 if index < 0 and self.conversation_selector.count():

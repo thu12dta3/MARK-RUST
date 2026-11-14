@@ -6,6 +6,7 @@ from typing import Any
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices, QIcon
+from .ui.i18n import tr
 from PyQt6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .package_install import parse_install_request
@@ -534,7 +535,7 @@ class ChatMixin:
         else:
             return (
                 "Falha no Processamento",
-                f"Não foi possível concluir a resposta: {clean_err}",
+                f"{tr('Não foi possível concluir a resposta:')} {clean_err}",
             )
 
     def _append_error_card(self, error_message: str, title: str = "Falha no Processamento", retry_callback=None, switch_model_callback=None, auto_scroll: bool = True):

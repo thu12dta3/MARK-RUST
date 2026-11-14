@@ -15,7 +15,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
-from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtCore import QEvent, QObject, QTimer, Qt
 from PyQt6.QtWidgets import QApplication
 
 LOG_PATH = Path.home() / ".local" / "state" / "mark" / "crash_fault.log"
@@ -96,3 +96,32 @@ def show_error_toast(window: Any, message: str) -> None:
             return
 
     QTimer.singleShot(0, _apply)
+
+
+class WheelGuard(QObject):
+    """Impede que a roda do mouse altere QComboBox/QSlider sem foco explicito."""
+
+    def eventFilter(self, obj: QObject, event: Any) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Wheel:
+            try:
+                if hasattr(obj, "view") and obj.view() is not None and obj.view().isVisible():
+                    return False
+            except RuntimeError:
+                return False
+            event.ignore()
+            return True
+        return False
+
+
+def install_wheel_guards(root: Any) -> int:
+    """Instala o guard em todos os combos e sliders de uma arvore de widgets."""
+    from PyQt6.QtWidgets import QComboBox, QSlider
+
+    guard = WheelGuard(root)
+    count = 0
+    for widget in root.findChildren(QComboBox) + root.findChildren(QSlider):
+        widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        widget.installEventFilter(guard)
+        count += 1
+    setattr(root, "_wheel_guard", guard)
+    return count

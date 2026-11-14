@@ -20,9 +20,9 @@ use rayon::prelude::*;
 
 use crate::gpu::{GpuBuffer, GpuEngine, GpuExperts};
 use crate::kernels::{
-    homeostatic_residual_add_inplace, int4_dot_row, int8_matvec, prepare_act_int4,
-    quantize_act_i8, rmsnorm_into,
-    svid_1bit_linear_subspace_w1a4, swiglu_inplace, YarnRopeCache,
+    homeostatic_residual_add_inplace, int4_dot_row, int4_dot_row_f32, int8_matvec, matvec_i8_f32,
+    prepare_act_int4, quantize_act_i8, rmsnorm_into, svid_1bit_linear_subspace_w1a4,
+    swiglu_inplace, YarnRopeCache,
 };
 use crate::safetensors::{BinTokenizer, SafeTensors};
 
@@ -653,7 +653,7 @@ impl SvidEngine {
                 }
 
                 if !experts_in_gpu {
-                    self.routed_experts(lw, top, &xn, &mut mlp_out);
+                    self.routed_experts(lw, top, &xn, &mut mlp_out, false);
                     for j in 0..HIDDEN {
                         mlp_out[j] += shared_out[j];
                     }
@@ -732,6 +732,7 @@ impl SvidEngine {
         top: &[(usize, f32)],
         xn: &[f32],
         mlp_out: &mut [f32],
+        quantized: bool,
     ) {
         let (Some(src), Some(g_sc), Some(u_sc), Some(d_sc)) = (
             lw.expert_src.as_ref(),
@@ -749,7 +750,11 @@ impl SvidEngine {
             return;
         };
 
-        let (xe, xo, xbias, x_sc) = prepare_act_int4(xn);
+        let (xe, xo, xbias, x_sc) = if quantized {
+            prepare_act_int4(xn)
+        } else {
+            (Vec::new(), Vec::new(), Vec::new(), 0.0f32)
+        };
         let n_top = top.len();
         let mut inter_all = vec![0.0f32; n_top * EXPERT_INTER];
         let mut down_all = vec![0.0f32; n_top * HIDDEN];
@@ -766,8 +771,17 @@ impl SvidEngine {
                     let g_srow = &g_sc[g_off_s + r * 16..g_off_s + (r + 1) * 16];
                     let u_row = &u_q4[g_off_q + r * 1024..g_off_q + (r + 1) * 1024];
                     let u_srow = &u_sc[g_off_s + r * 16..g_off_s + (r + 1) * 16];
-                    let gv = int4_dot_row(g_row, g_srow, &xe, &xo, &xbias, x_sc);
-                    let uv = int4_dot_row(u_row, u_srow, &xe, &xo, &xbias, x_sc);
+                    let (gv, uv) = if quantized {
+                        (
+                            int4_dot_row(g_row, g_srow, &xe, &xo, &xbias, x_sc),
+                            int4_dot_row(u_row, u_srow, &xe, &xo, &xbias, x_sc),
+                        )
+                    } else {
+                        (
+                            int4_dot_row_f32(g_row, g_srow, xn),
+                            int4_dot_row_f32(u_row, u_srow, xn),
+                        )
+                    };
                     inter[r] = (gv / (1.0 + (-gv).exp())) * uv;
                 }
             });
@@ -779,12 +793,16 @@ impl SvidEngine {
                 let eid = top[ki].0;
                 let d_off_q = eid * HIDDEN * 704;
                 let d_off_s = eid * HIDDEN * 11;
-                let (ie, io, ibias, isc) =
-                    prepare_act_int4(&inter_all[ki * EXPERT_INTER..(ki + 1) * EXPERT_INTER]);
+                let (ie, io, ibias, isc) = prepare_act_int4(&inter_all[ki * EXPERT_INTER..(ki + 1) * EXPERT_INTER]);
+                let inter = &inter_all[ki * EXPERT_INTER..(ki + 1) * EXPERT_INTER];
                 for r in 0..HIDDEN {
                     let d_row = &d_q4[d_off_q + r * 704..d_off_q + (r + 1) * 704];
                     let d_srow = &d_sc[d_off_s + r * 11..d_off_s + (r + 1) * 11];
-                    down[r] = int4_dot_row(d_row, d_srow, &ie, &io, &ibias, isc);
+                    down[r] = if quantized {
+                        int4_dot_row(d_row, d_srow, &ie, &io, &ibias, isc)
+                    } else {
+                        int4_dot_row_f32(d_row, d_srow, inter)
+                    };
                 }
             });
 

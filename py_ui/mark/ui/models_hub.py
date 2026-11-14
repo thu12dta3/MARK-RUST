@@ -1078,303 +1078,47 @@ class ModelsHubWidget(QWidget):
 
     # -- Hugging Face tab -------------------------------------------------
 
-    def _build_hf_downloader_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
-
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
-        self.hf_search_input = QLineEdit()
-        self.hf_search_input.setObjectName("hfSearchInput")
-        self.hf_search_input.setPlaceholderText(
-            tr("Search any Hugging Face repository, for example Qwen/Qwen3-4B-GGUF")
-        )
-        self.hf_search_input.returnPressed.connect(self._search_hf)
-        search_row.addWidget(self.hf_search_input, 1)
-
-        btn_search = QPushButton(tr("Search"))
-        btn_search.setObjectName("btnHfSearch")
-        btn_search.clicked.connect(self._search_hf)
-        search_row.addWidget(btn_search)
-
-        btn_popular = QPushButton(tr("Popular in the whole Hub"))
-        btn_popular.setObjectName("btnHfPopular")
-        btn_popular.clicked.connect(self.load_popular_models)
-        search_row.addWidget(btn_popular)
-
-        btn_mice = QPushButton(tr("Miceworks Collection"))
-        btn_mice.setObjectName("btnHfMiceworks")
-        btn_mice.setStyleSheet(
-            f"background: {C_PANEL}; color: {C_ACCENT}; border: 1px solid {C_ACCENT}; "
-            "border-radius: 6px; padding: 6px 12px; font-weight: 600;"
-        )
-        btn_mice.clicked.connect(self._load_miceworks_models)
-        search_row.addWidget(btn_mice)
-        layout.addLayout(search_row)
-
-        budget = QLabel(tr("VRAM fit budget: {budget} GiB for downloads on this machine.").format(budget=f"{VRAM_BUDGET_GIB:.1f}"))
-        budget.setStyleSheet(f"color: {C_TEXT_SECONDARY}; font-size: 12px; background: transparent;")
-        layout.addWidget(budget)
-
-        lists_row = QHBoxLayout()
-        lists_row.setSpacing(10)
-        self.repo_list = QListWidget()
-        self.repo_list.setObjectName("hfRepoList")
-        self.repo_list.itemClicked.connect(self._on_repo_selected)
-        lists_row.addWidget(self.repo_list, 1)
-
-        self.files_list = QListWidget()
-        self.files_list.setObjectName("hfFilesList")
-        lists_row.addWidget(self.files_list, 1)
-        layout.addLayout(lists_row, 1)
-
-        progress_row = QHBoxLayout()
-        progress_row.setSpacing(10)
-        self.dl_progress = QProgressBar()
-        self.dl_progress.setObjectName("hfDownloadProgress")
-        self.dl_progress.setRange(0, 100)
-        self.dl_progress.setValue(0)
-        progress_row.addWidget(self.dl_progress, 1)
-
-        self.dl_speed_label = QLabel(tr("Idle"))
-        self.dl_speed_label.setStyleSheet(f"color: {C_TEXT_SECONDARY}; font-size: 12px; background: transparent;")
-        progress_row.addWidget(self.dl_speed_label)
-        layout.addLayout(progress_row)
-
-        buttons_row = QHBoxLayout()
-        buttons_row.setSpacing(8)
-        self.btn_download = QPushButton(tr("Download Selected File"))
-        self.btn_download.setObjectName("btnHfDownload")
-        self.btn_download.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_download.setStyleSheet(
-            f"background: {C_ACCENT}; color: #0B0F14; font-weight: 700; padding: 8px 14px; border-radius: 6px;"
-        )
-        self.btn_download.clicked.connect(self._start_selected_download)
-        buttons_row.addWidget(self.btn_download)
-
-        self.btn_cancel_dl = QPushButton(tr("Cancel download"))
-        self.btn_cancel_dl.setObjectName("btnHfCancel")
-        self.btn_cancel_dl.clicked.connect(self._cancel_download)
-        buttons_row.addWidget(self.btn_cancel_dl)
-        buttons_row.addStretch(1)
-
-        self.models_root_label = QLabel(tr("Models root: {path}").format(path=str(self.models_root)))
-        self.models_root_label.setStyleSheet(f"color: {C_TEXT_MUTED}; font-size: 11px; background: transparent;")
-        buttons_row.addWidget(self.models_root_label)
-        layout.addLayout(buttons_row)
-        return page
-
     def load_popular_models(self) -> None:
-        self._set_hf_status(tr("Loading popular models from the whole Hugging Face Hub."), "info")
-        self._start_worker("popular")
+
+        """Compatibilidade: delega a busca popular ao split view."""
+
+        view = getattr(self, "hf_view", None)
+
+        if view is not None:
+
+            view.search("", "downloads", "all")
+
 
     def _load_miceworks_models(self) -> None:
-        self.repo_list.clear()
-        for entry in MICEWORKS_OFFICIAL_MODELS:
-            record = {
-                "id": str(entry.get("id") or ""),
-                "downloads": int(entry.get("downloads") or 0),
-                "likes": 0,
-                "pipeline": "text-generation",
-                "fmt": str(entry.get("quant") or "HF"),
-                "tags": [],
-            }
-            if not record["id"]:
-                continue
-            label = f"{record['id']}  ·  {entry.get('params', '')}  ·  {record['fmt']}"
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, record)
-            self.repo_list.addItem(item)
-        self.files_list.clear()
-        self._set_hf_status(
-            tr("{count} repositories from the Miceworks collection.").format(count=self.repo_list.count()),
-            "ok",
-        )
+
+        """Atalho opcional para a colecao miceworks."""
+
+        view = getattr(self, "hf_view", None)
+
+        if view is not None:
+
+            view._set_scope("miceworks")
+
 
     def _search_hf(self) -> None:
-        query = self.hf_search_input.text().strip()
-        if not query:
-            self.load_popular_models()
-            return
-        self._set_hf_status(tr("Searching the Hub for {query}.").format(query=query), "info")
-        self._start_worker("search", query)
 
-    def _start_worker(self, mode: str, payload: str = "") -> None:
-        worker = HubFetchWorker(mode, payload)
-        worker.reposReady.connect(self._on_repos_ready)
-        worker.filesReady.connect(self._on_files_ready)
-        worker.failed.connect(self._on_hub_error)
-        worker.finished.connect(lambda: self._reap_worker(worker))
-        self._workers.append(worker)
-        register_thread(worker)
-        worker.start()
+        """Repassa a busca digitada ao split view."""
 
-    def _reap_worker(self, worker: HubFetchWorker) -> None:
-        unregister_thread(worker)
-        if worker in self._workers:
-            self._workers.remove(worker)
-        worker.deleteLater()
+        view = getattr(self, "hf_view", None)
 
-    def _on_repos_ready(self, mode: str, items: list[dict[str, Any]]) -> None:
-        self.repo_list.clear()
-        for record in items:
-            downloads = format_count(int(record.get("downloads") or 0))
-            label = f"{record.get('id', '')}  ·  {record.get('fmt', 'HF')}  ·  {downloads} downloads"
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, record)
-            if record.get("pipeline"):
-                item.setToolTip(f"{record.get('pipeline')} · likes {record.get('likes', 0)}")
-            self.repo_list.addItem(item)
-        self.files_list.clear()
-        if mode == "popular":
-            message = tr("{count} popular repositories from the whole Hub.")
-        else:
-            message = tr("{count} repositories match the search.")
-        self._set_hf_status(message.format(count=len(items)), "ok" if items else "warn")
+        if view is not None:
 
-    def _on_files_ready(self, repo_id: str, files: list[dict[str, Any]]) -> None:
-        self.files_list.clear()
-        if not files:
-            self._set_hf_status(tr("No downloadable weights found in {repo}.").format(repo=repo_id), "warn")
-            return
-        fits_count = 0
-        for entry in files:
-            verdict = vram_fit(int(entry.get("size_bytes") or 0))
-            if verdict["state"] == "fits":
-                fits_count += 1
-                badge = tr("FITS {used} of {budget} GiB").format(
-                    used=f"{verdict['used_gib']:.1f}", budget=f"{verdict['budget_gib']:.1f}"
-                )
-                color = C_GREEN
-            elif verdict["state"] == "exceeds":
-                badge = tr("EXCEEDS {used} of {budget} GiB").format(
-                    used=f"{verdict['used_gib']:.1f}", budget=f"{verdict['budget_gib']:.1f}"
-                )
-                color = C_RED
-            else:
-                badge = tr("SIZE UNKNOWN")
-                color = C_TEXT_MUTED
-            item = QListWidgetItem(
-                f"{entry['filename']}  ·  {format_bytes(int(entry.get('size_bytes') or 0))}  ·  {badge}"
-            )
-            item.setData(Qt.ItemDataRole.UserRole, entry)
-            item.setForeground(QColor(color))
-            self.files_list.addItem(item)
-        self._set_hf_status(
-            tr("{count} files in {repo}; {fits} fit in {budget} GiB of VRAM.").format(
-                count=len(files), repo=repo_id, fits=fits_count, budget=f"{VRAM_BUDGET_GIB:.1f}"
-            ),
-            "ok",
-        )
+            view._on_search()
 
-    def _on_hub_error(self, message: str) -> None:
-        self._set_hf_status(message, "error")
 
-    def _set_hf_status(self, message: str, kind: str = "info") -> None:
-        colors = {"info": C_ACCENT, "ok": C_GREEN, "warn": C_AMBER, "error": C_RED}
-        self._set_status(message, kind)
-        self.dl_speed_label.setStyleSheet(
-            f"color: {colors.get(kind, C_TEXT_SECONDARY)}; font-size: 12px; background: transparent;"
-        )
+    def _build_hf_downloader_tab(self) -> QWidget:
+        """Split view estilo LM Studio: cards a esquerda, inspetor a direita."""
+        from .hf_splitview import HFSplitView
 
-    def _on_repo_selected(self, item: QListWidgetItem) -> None:
-        record = item.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(record, dict):
-            return
-        repo_id = str(record.get("id") or "")
-        if not repo_id:
-            return
-        self.files_list.clear()
-        self._set_hf_status(tr("Loading files for {repo}.").format(repo=repo_id), "info")
-        self._start_worker("files", repo_id)
-
-    def _start_selected_download(self) -> None:
-        current = self.files_list.currentItem()
-        if current is None:
-            self._set_hf_status(tr("Select a file to download first."), "warn")
-            return
-        entry = current.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(entry, dict):
-            self._set_hf_status(tr("Select a file to download first."), "warn")
-            return
-        if self._download_worker is not None and self._download_worker.isRunning():
-            self._set_hf_status(tr("A download is already running."), "warn")
-            return
-        repo_id = str(entry.get("repo_id") or "")
-        filename = str(entry.get("filename") or "")
-        url = str(entry.get("url") or "")
-        if not repo_id or not filename or not url:
-            self._set_hf_status(tr("This file cannot be downloaded: missing repository metadata."), "error")
-            return
-        target_dir = self.models_root / repo_id.replace("/", "__")
-        destination = target_dir / Path(filename).name
-        self.dl_progress.setValue(0)
-        self.btn_download.setEnabled(False)
-        self.btn_cancel_dl.setEnabled(True)
-        self._download_worker = DownloadWorker(url, destination, int(entry.get("size_bytes") or 0))
-        self._download_worker.progressed.connect(self._on_download_progress)
-        self._download_worker.downloadFinished.connect(self._on_download_finished)
-        register_thread(self._download_worker)
-        self._download_worker.start()
-        self._set_hf_status(
-            tr("Downloading {file} from {repo} to {dest}.").format(
-                file=filename, repo=repo_id, dest=str(destination)
-            ),
-            "info",
-        )
-
-    def _cancel_download(self) -> None:
-        if self._download_worker is not None and self._download_worker.isRunning():
-            self._download_worker.cancel()
-            self._set_hf_status(tr("Cancelling the download..."), "warn")
-            return
-        self._set_hf_status(tr("No download is running."), "info")
-
-    def _on_download_progress(self, downloaded: int, total: int, speed: float, eta: float) -> None:
-        percent = int((downloaded / total) * 100) if total > 0 else 0
-        self.dl_progress.setValue(max(0, min(100, percent)))
-        self.dl_speed_label.setText(
-            tr("{percent}% · {done} of {total} · {speed} MB/s · ETA {eta}").format(
-                percent=percent,
-                done=format_bytes(downloaded),
-                total=format_bytes(total),
-                speed=f"{speed:.2f}",
-                eta=format_eta(eta),
-            )
-        )
-
-    def _on_download_finished(self, ok: bool, saved_path: str, message: str) -> None:
-        self.btn_download.setEnabled(True)
-        self.btn_cancel_dl.setEnabled(False)
-        if self._download_worker is not None:
-            unregister_thread(self._download_worker)
-            self._download_worker.deleteLater()
-            self._download_worker = None
-        if not ok or not saved_path:
-            self.dl_progress.setValue(0)
-            self._set_hf_status(tr("Download failed: {detail}").format(detail=message or tr("unknown error")), "error")
-            return
-        path = Path(saved_path)
-        entry = self.files_list.currentItem()
-        record = entry.data(Qt.ItemDataRole.UserRole) if entry is not None else None
-        if isinstance(record, dict):
-            try:
-                register_downloaded_model(
-                    self.models_root,
-                    str(record.get("repo_id") or ""),
-                    str(record.get("filename") or path.name),
-                    path,
-                )
-            except OSError as exc:
-                self._set_hf_status(tr("Download finished but the manifest was not updated: {detail}").format(detail=str(exc)), "warn")
-                return
-        self.dl_progress.setValue(100)
-        self._refresh_role_model_combos()
-        self._set_hf_status(tr("Download finished and registered: {path}").format(path=str(path)), "ok")
-
-    # -- local server tab -------------------------------------------------
+        view = HFSplitView(self)
+        self.hf_view = view
+        self.hf_search_input = view.search_input
+        return view
 
     def _build_local_server_tab(self) -> QWidget:
         page = QWidget()

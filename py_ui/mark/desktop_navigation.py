@@ -273,16 +273,18 @@ class NavigationMixin:
         self._prefill_message(prompt)
 
     def open_specialized_chat(self, specialization: str):
-        if specialization not in {"general", "engineer", "professor"}:
+        if specialization not in {"general", "engineer", "professor", "vision"}:
             raise ValueError("Área de conversa desconhecida")
         if self.current_specialization in {"engineer", "professor"}:
             self.specialization_conversations[self.current_specialization] = self.current_conversation_id
         self.current_specialization = specialization
         self._set_active_area(specialization)
-        if hasattr(self, "engineer_panel"):
-            self.engineer_panel.setVisible(specialization == "engineer")
-            if specialization == "engineer":
-                self.engineer_panel.refresh_profile()
+        if hasattr(self, "engineer_bar"):
+            self.engineer_bar.setVisible(specialization == "engineer")
+        if hasattr(self, "_apply_role_selection"):
+            self._apply_role_selection(specialization)
+        if hasattr(self, "_update_mode_empty_state"):
+            self._update_mode_empty_state(specialization)
         if hasattr(self, "professor_panel"):
             self.professor_panel.setVisible(specialization == "professor")
         if hasattr(self, "_decorate_nav_labels"):
@@ -297,8 +299,7 @@ class NavigationMixin:
                         break
             self.model_selector.setToolTip("O Engineer usa o perfil de código configurado e a memória compartilhada.")
             self.model_selector.setEnabled(False)
-            self.engineer_chat_badge.setText("ENGINEER · PERFIL DE CÓDIGO")
-            self.engineer_chat_badge.show()
+            self.engineer_chat_badge.hide()
         else:
             if self._engineer_profile_restore is not None:
                 self.model_selector.setEnabled(True)
@@ -317,7 +318,9 @@ class NavigationMixin:
                     QMessageBox.warning(self, "Projeto", "Use um ID de até 128 caracteres.")
                     return
                 self.current_project_id = project_id
-        self.page_heading.setText({"general": "Geral", "engineer": "Engenheiro", "professor": "Professor"}[specialization])
+        self.page_heading.setText(
+            {"general": "Geral", "engineer": "Engenheiro", "professor": "Professor", "vision": "Vision"}[specialization]
+        )
         if specialization == "general":
             self.current_conversation_id = "general-main"
         else:

@@ -367,7 +367,27 @@ class SettingsWidget(QWidget):
         layout.addWidget(self.tab_widget, 1)
 
     # -------------------------------------------------------------- inference
+    def sync_model_limits(self, model_id: str) -> dict[str, Any]:
+        """Ajusta os limites dos sliders ao modelo real escaneado."""
+        from .model_scanner import scan_model
+
+        profile = scan_model(model_id)
+        context = profile.get("context")
+        layers = profile.get("layers")
+        if context and hasattr(self, "slider_ctx"):
+            self.slider_ctx.max_val = int(context)
+            setattr(self.slider_ctx, "max_value", int(context))
+            if hasattr(self.slider_ctx, "subtitle_label"):
+                self.slider_ctx.subtitle_label.setText(
+                    tr("Model ceiling: {ctx} tokens").format(ctx=f"{int(context):,}")
+                )
+        if layers and hasattr(self, "slider_gpu"):
+            self.slider_gpu.max_val = int(layers)
+            setattr(self.slider_gpu, "max_value", int(layers))
+        return profile
+
     def _build_inference_tab(self) -> QWidget:
+        self._inference_tab_marker = True
         current_params = get_local_inference_params()
         cpu_max = get_hardware_cpu_limit()
 
@@ -508,7 +528,7 @@ class SettingsWidget(QWidget):
         self.inference_status_label.setWordWrap(True)
         layout.addWidget(self.inference_status_label)
 
-        self.reload_inference_button = QPushButton(tr("🔄 Reload to apply the changes"))
+        self.reload_inference_button = QPushButton(tr("Reload to apply the changes"))
         self.reload_inference_button.setObjectName("reloadInferenceButton")
         self.reload_inference_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reload_inference_button.setFixedHeight(44)

@@ -91,6 +91,15 @@ class ChatMixin:
                 provider_name = provider_name or p
                 active_model_id = m
 
+        # O motor escolhido no composer manda no roteamento do backend local.
+        engine = str(getattr(self, "active_engine", "") or "")
+        if engine == "rust":
+            provider_name = "mark-rust-1bit"
+        elif engine == "llamacpp":
+            provider_name = "llama.cpp"
+        elif engine == "ollama":
+            provider_name = "ollama"
+
         return str(active_model_id), str(provider_name)
 
     def get_system_prompt(self) -> str:

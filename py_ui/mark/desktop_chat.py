@@ -20,6 +20,16 @@ from .brain_prompt import build_identity_system_prompt, SYSTEM
 from .ui.widgets import ErrorCardWidget, MessageBubbleWidget
 
 
+# System prompt compacto para o engine local (mark-server): o prompt completo de
+# 1719 chars custa ~465 tokens de prefill (~18 s a 26 tok/s) em toda mensagem.
+LOCAL_ENGINE_SYSTEM = (
+    "Voce e o MARK, assistente tecnico local. Responda no idioma do usuario com "
+    "precisao, sem inventar fatos, medicoes ou acoes executadas."
+)
+# Orcamento de historico (caracteres) enviado ao engine local por requisicao.
+LOCAL_HISTORY_BUDGET_CHARS = 2200
+
+
 def is_conversational_message(text: str) -> bool:
     """Verifica se a mensagem é uma saudação ou interação conversacional simples que não requer execução agentizada."""
     if not isinstance(text, str):
@@ -194,7 +204,7 @@ class ChatMixin:
         finally:
             db.close()
 
-    def _conversation_request_messages(self, latest):
+    def _conversation_request_messages(self, latest, max_chars: int | None = None):
         self._ensure_conversation_store()
         db = self._conversation_db()
         try:
@@ -208,6 +218,18 @@ class ChatMixin:
         finally:
             db.close()
         rows.reverse()
+        # Janela deslizante real: mantem as mensagens mais recentes que couberem
+        # no orcamento, descartando as antigas (nunca corta a mensagem atual).
+        if max_chars and rows:
+            kept: list[tuple[str, str]] = []
+            used = 0
+            for role, content in reversed(rows):
+                size = len(content or "")
+                if kept and used + size > max_chars:
+                    break
+                kept.append((role, content))
+                used += size
+            rows = list(reversed(kept))
         messages = [{"role": role, "content": content} for role, content in rows]
         messages.append({"role": "user", "content": [{"type": "text", "text": latest}]})
         return messages[-31:]
@@ -254,7 +276,11 @@ class ChatMixin:
         if paths:
             visible_message += "\n\nArquivos: " + " · ".join(path.name for path in paths)
         conversation_id = self.current_conversation_id
-        request_messages = self._conversation_request_messages(message)
+        # O engine local paga prefill a ~26 tok/s: historico enxuto por orcamento.
+        local_engine = getattr(self, "active_engine", "") in ("rust", "svid")
+        request_messages = self._conversation_request_messages(
+            message, max_chars=LOCAL_HISTORY_BUDGET_CHARS if local_engine else None
+        )
         self._save_conversation_message("user", visible_message)
         self._append_bubble(visible_message, "user", source="desktop-chat")
         install_request = parse_install_request(message) if not paths else None
@@ -326,7 +352,15 @@ class ChatMixin:
         if self.current_task_id:
             context_payload["task_id"] = self.current_task_id
         active_model_id, provider_name = self._resolve_model_and_provider()
-        system_prompt = build_identity_system_prompt(active_model_id, provider_name) if active_model_id else SYSTEM
+        local_engine = getattr(self, "active_engine", "") in ("rust", "svid")
+        # No engine local usamos o prompt compacto: o prompt de identidade completo
+        # adiciona ~465 tokens de prefill em cada mensagem.
+        base_system = LOCAL_ENGINE_SYSTEM if local_engine else None
+        system_prompt = (
+            build_identity_system_prompt(active_model_id, provider_name, base_system=base_system)
+            if active_model_id
+            else (base_system or SYSTEM)
+        )
 
         profile = (
             self.model_selector.currentData()

@@ -1,0 +1,34 @@
+[package]
+name = "mark-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MARK Desktop em Rust puro: GUI egui/eframe sobre wgpu (Vulkan), 100% nativa"
+
+[[bin]]
+name = "mark-desktop"
+path = "src/main.rs"
+
+[dependencies]
+mark-core.workspace = true
+mark-engine.workspace = true
+mark-tools.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+uuid.workspace = true
+dirs.workspace = true
+
+egui = "0.37"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui-wgpu = { version = "0.37", default-features = false, features = ["wayland", "x11"] }
+egui_extras = { version = "0.37", default-features = false, features = ["image"] }
+wgpu = { version = "30", default-features = false, features = ["vulkan", "gles"] }
+arboard = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }

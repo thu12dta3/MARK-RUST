@@ -1,0 +1,17 @@
+target/
+*.png
+*.jpg
+*.bak*
+*.orig
+*.rej
+.env
+.env.*
+*.gguf
+*.pt
+*.safetensors
+*.bin
+*.zim
+*.tmp-*
+vault.bin
+*.log
+.DS_Store

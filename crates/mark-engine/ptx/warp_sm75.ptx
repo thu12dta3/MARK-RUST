@@ -1,0 +1,176 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+.visible .entry rust_gpu_int8_matvec_warp(
+    .param .u64 param_q8, .param .u64 param_scale, .param .u64 param_x,
+    .param .u64 param_out, .param .u64 param_mask, .param .u32 param_kcols, .param .u32 param_mrows
+)
+{
+    .reg .pred %p<5>; .reg .b32 %r<16>; .reg .b64 %rd<18>; .reg .f32 %f<10>;
+    ld.param.u64 %rd1, [param_q8]; ld.param.u64 %rd2, [param_scale];
+    ld.param.u64 %rd3, [param_x];  ld.param.u64 %rd4, [param_out];
+    ld.param.u64 %rd14, [param_mask]; ld.param.u32 %r1, [param_kcols]; ld.param.u32 %r2, [param_mrows];
+    mov.u32 %r3, %ctaid.x; mov.u32 %r4, %tid.x;
+    shr.u32 %r5, %r4, 5; and.b32 %r6, %r4, 31;
+    shl.b32 %r7, %r3, 2; add.u32 %r8, %r7, %r5;
+    setp.ge.u32 %p1, %r8, %r2; @%p1 bra DONE_I8W;
+
+    setp.eq.u64 %p4, %rd14, 0; @%p4 bra START_I8W;
+    cvt.u64.u32 %rd15, %r8; add.u64 %rd16, %rd14, %rd15;
+    ld.global.u8 %r12, [%rd16]; setp.eq.u32 %p4, %r12, 0; @%p4 bra START_I8W;
+    setp.ne.u32 %p3, %r6, 0; @%p3 bra DONE_I8W;
+    mul.wide.u32 %rd11, %r8, 4; add.u64 %rd13, %rd4, %rd11;
+    st.global.f32 [%rd13], 0fCE6E6B28; bra DONE_I8W;
+
+START_I8W:
+    mul.wide.u32 %rd5, %r8, %r1; add.u64 %rd6, %rd1, %rd5;
+    mov.f32 %f1, 0f00000000; mov.u32 %r9, %r6;
+LOOP_I8W:
+    setp.ge.u32 %p2, %r9, %r1; @%p2 bra REDUCE_I8W;
+    cvt.u64.u32 %rd7, %r9; add.u64 %rd8, %rd6, %rd7;
+    ld.global.s8 %r10, [%rd8]; ld.global.s8 %r11, [%rd8 + 32];
+    cvt.rn.f32.s32 %f2, %r10; cvt.rn.f32.s32 %f3, %r11;
+    mul.wide.u32 %rd9, %r9, 4; add.u64 %rd10, %rd3, %rd9;
+    ld.global.f32 %f4, [%rd10]; ld.global.f32 %f5, [%rd10 + 128];
+    fma.rn.f32 %f1, %f2, %f4, %f1; fma.rn.f32 %f1, %f3, %f5, %f1;
+    add.u32 %r9, %r9, 64; bra LOOP_I8W;
+REDUCE_I8W:
+    shfl.sync.down.b32 %f6, %f1, 16, 31, 0xffffffff; add.f32 %f1, %f1, %f6;
+    shfl.sync.down.b32 %f6, %f1, 8, 31, 0xffffffff;  add.f32 %f1, %f1, %f6;
+    shfl.sync.down.b32 %f6, %f1, 4, 31, 0xffffffff;  add.f32 %f1, %f1, %f6;
+    shfl.sync.down.b32 %f6, %f1, 2, 31, 0xffffffff;  add.f32 %f1, %f1, %f6;
+    shfl.sync.down.b32 %f6, %f1, 1, 31, 0xffffffff;  add.f32 %f1, %f1, %f6;
+    setp.ne.u32 %p3, %r6, 0; @%p3 bra DONE_I8W;
+    mul.wide.u32 %rd11, %r8, 4; add.u64 %rd12, %rd2, %rd11;
+    ld.global.f32 %f7, [%rd12]; mul.f32 %f1, %f1, %f7;
+    add.u64 %rd13, %rd4, %rd11; st.global.f32 [%rd13], %f1;
+DONE_I8W:
+    ret;
+}
+
+.visible .entry rust_gpu_int4_gate_up_swiglu_warp(
+    .param .u64 param_gq4, .param .u64 param_gsc, .param .u64 param_uq4, .param .u64 param_usc,
+    .param .u64 param_x, .param .u64 param_out, .param .u32 param_mrows
+)
+{
+    .reg .pred %p<4>; .reg .b32 %r<24>; .reg .b64 %rd<24>; .reg .f32 %f<18>;
+    ld.param.u64 %rd1, [param_gq4]; ld.param.u64 %rd2, [param_gsc];
+    ld.param.u64 %rd17, [param_uq4]; ld.param.u64 %rd18, [param_usc];
+    ld.param.u64 %rd3, [param_x]; ld.param.u64 %rd4, [param_out]; ld.param.u32 %r2, [param_mrows];
+    mov.u32 %r3, %ctaid.x; mov.u32 %r4, %tid.x;
+    shr.u32 %r5, %r4, 5; and.b32 %r6, %r4, 31;
+    shl.b32 %r7, %r3, 2; add.u32 %r8, %r7, %r5;
+    setp.ge.u32 %p1, %r8, %r2; @%p1 bra DONE_GUS;
+
+    shl.b32 %r9, %r8, 4; shl.b32 %r10, %r9, 6; cvt.u64.u32 %rd5, %r10;
+    add.u64 %rd6, %rd1, %rd5; add.u64 %rd19, %rd17, %rd5;
+    mul.wide.u32 %rd7, %r9, 4; add.u64 %rd8, %rd2, %rd7; add.u64 %rd20, %rd18, %rd7;
+    mov.f32 %f1, 0f00000000; mov.f32 %f13, 0f00000000; mov.u32 %r11, 0;
+LOOP_GUS:
+    setp.ge.u32 %p2, %r11, 16; @%p2 bra REDUCE_GUS;
+    shl.b32 %r20, %r11, 7; shl.b32 %r21, %r6, 1; add.u32 %r22, %r20, %r21;
+    mul.wide.u32 %rd11, %r22, 4; add.u64 %rd12, %rd3, %rd11;
+    ld.global.f32 %f6, [%rd12]; ld.global.f32 %f7, [%rd12 + 4];
+    ld.global.f32 %f8, [%rd12 + 256]; ld.global.f32 %f9, [%rd12 + 260];
+    shl.b32 %r12, %r11, 6; add.u32 %r13, %r12, %r6; cvt.u64.u32 %rd9, %r13;
+    mul.wide.u32 %rd13, %r11, 4;
+
+    add.u64 %rd10, %rd6, %rd9; ld.global.u8 %r14, [%rd10]; ld.global.u8 %r15, [%rd10 + 32];
+    and.b32 %r16, %r14, 15; sub.s32 %r16, %r16, 8; cvt.rn.f32.s32 %f2, %r16;
+    shr.u32 %r17, %r14, 4;  sub.s32 %r17, %r17, 8; cvt.rn.f32.s32 %f3, %r17;
+    and.b32 %r18, %r15, 15; sub.s32 %r18, %r18, 8; cvt.rn.f32.s32 %f4, %r18;
+    shr.u32 %r19, %r15, 4;  sub.s32 %r19, %r19, 8; cvt.rn.f32.s32 %f5, %r19;
+    mul.f32 %f10, %f2, %f6; fma.rn.f32 %f10, %f3, %f7, %f10;
+    fma.rn.f32 %f10, %f4, %f8, %f10; fma.rn.f32 %f10, %f5, %f9, %f10;
+    add.u64 %rd14, %rd8, %rd13; ld.global.f32 %f11, [%rd14]; fma.rn.f32 %f1, %f10, %f11, %f1;
+
+    add.u64 %rd21, %rd19, %rd9; ld.global.u8 %r14, [%rd21]; ld.global.u8 %r15, [%rd21 + 32];
+    and.b32 %r16, %r14, 15; sub.s32 %r16, %r16, 8; cvt.rn.f32.s32 %f2, %r16;
+    shr.u32 %r17, %r14, 4;  sub.s32 %r17, %r17, 8; cvt.rn.f32.s32 %f3, %r17;
+    and.b32 %r18, %r15, 15; sub.s32 %r18, %r18, 8; cvt.rn.f32.s32 %f4, %r18;
+    shr.u32 %r19, %r15, 4;  sub.s32 %r19, %r19, 8; cvt.rn.f32.s32 %f5, %r19;
+    mul.f32 %f10, %f2, %f6; fma.rn.f32 %f10, %f3, %f7, %f10;
+    fma.rn.f32 %f10, %f4, %f8, %f10; fma.rn.f32 %f10, %f5, %f9, %f10;
+    add.u64 %rd22, %rd20, %rd13; ld.global.f32 %f11, [%rd22]; fma.rn.f32 %f13, %f10, %f11, %f13;
+    add.u32 %r11, %r11, 1; bra LOOP_GUS;
+REDUCE_GUS:
+    shfl.sync.down.b32 %f12, %f1, 16, 31, 0xffffffff; add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 8, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 4, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 2, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 1, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f13, 16, 31, 0xffffffff; add.f32 %f13, %f13, %f12;
+    shfl.sync.down.b32 %f12, %f13, 8, 31, 0xffffffff;  add.f32 %f13, %f13, %f12;
+    shfl.sync.down.b32 %f12, %f13, 4, 31, 0xffffffff;  add.f32 %f13, %f13, %f12;
+    shfl.sync.down.b32 %f12, %f13, 2, 31, 0xffffffff;  add.f32 %f13, %f13, %f12;
+    shfl.sync.down.b32 %f12, %f13, 1, 31, 0xffffffff;  add.f32 %f13, %f13, %f12;
+    setp.ne.u32 %p3, %r6, 0; @%p3 bra DONE_GUS;
+    mul.f32 %f14, %f1, 0fBFB8AA3B; ex2.approx.ftz.f32 %f14, %f14;
+    add.f32 %f14, %f14, 0f3F800000; rcp.approx.ftz.f32 %f14, %f14;
+    mul.f32 %f15, %f1, %f14; mul.f32 %f15, %f15, %f13;
+    mul.wide.u32 %rd15, %r8, 4; add.u64 %rd16, %rd4, %rd15; st.global.f32 [%rd16], %f15;
+DONE_GUS:
+    ret;
+}
+
+.visible .entry rust_gpu_int4_down_axpy_warp(
+    .param .u64 param_q4, .param .u64 param_scale, .param .u64 param_x,
+    .param .u64 param_accum, .param .f32 param_wk, .param .u32 param_mrows
+)
+{
+    .reg .pred %p<4>; .reg .b32 %r<24>; .reg .b64 %rd<20>; .reg .f32 %f<16>;
+    ld.param.u64 %rd1, [param_q4]; ld.param.u64 %rd2, [param_scale];
+    ld.param.u64 %rd3, [param_x]; ld.param.u64 %rd4, [param_accum];
+    ld.param.f32 %f14, [param_wk]; ld.param.u32 %r2, [param_mrows];
+    mov.u32 %r3, %ctaid.x; mov.u32 %r4, %tid.x;
+    shr.u32 %r5, %r4, 5; and.b32 %r6, %r4, 31;
+    shl.b32 %r7, %r3, 2; add.u32 %r8, %r7, %r5;
+    setp.ge.u32 %p1, %r8, %r2; @%p1 bra DONE_DAW;
+    mul.lo.u32 %r9, %r8, 11; shl.b32 %r10, %r9, 6; cvt.u64.u32 %rd5, %r10;
+    add.u64 %rd6, %rd1, %rd5; mul.wide.u32 %rd7, %r9, 4; add.u64 %rd8, %rd2, %rd7;
+    mov.f32 %f1, 0f00000000; mov.u32 %r11, 0;
+LOOP_DAW:
+    setp.ge.u32 %p2, %r11, 11; @%p2 bra REDUCE_DAW;
+    shl.b32 %r12, %r11, 6; add.u32 %r13, %r12, %r6; cvt.u64.u32 %rd9, %r13;
+    add.u64 %rd10, %rd6, %rd9; ld.global.u8 %r14, [%rd10]; ld.global.u8 %r15, [%rd10 + 32];
+    and.b32 %r16, %r14, 15; sub.s32 %r16, %r16, 8; cvt.rn.f32.s32 %f2, %r16;
+    shr.u32 %r17, %r14, 4;  sub.s32 %r17, %r17, 8; cvt.rn.f32.s32 %f3, %r17;
+    and.b32 %r18, %r15, 15; sub.s32 %r18, %r18, 8; cvt.rn.f32.s32 %f4, %r18;
+    shr.u32 %r19, %r15, 4;  sub.s32 %r19, %r19, 8; cvt.rn.f32.s32 %f5, %r19;
+    shl.b32 %r20, %r11, 7; shl.b32 %r21, %r6, 1; add.u32 %r22, %r20, %r21;
+    mul.wide.u32 %rd11, %r22, 4; add.u64 %rd12, %rd3, %rd11;
+    ld.global.f32 %f6, [%rd12]; ld.global.f32 %f7, [%rd12 + 4];
+    ld.global.f32 %f8, [%rd12 + 256]; ld.global.f32 %f9, [%rd12 + 260];
+    mul.f32 %f10, %f2, %f6; fma.rn.f32 %f10, %f3, %f7, %f10;
+    fma.rn.f32 %f10, %f4, %f8, %f10; fma.rn.f32 %f10, %f5, %f9, %f10;
+    mul.wide.u32 %rd13, %r11, 4; add.u64 %rd14, %rd8, %rd13;
+    ld.global.f32 %f11, [%rd14]; fma.rn.f32 %f1, %f10, %f11, %f1;
+    add.u32 %r11, %r11, 1; bra LOOP_DAW;
+REDUCE_DAW:
+    shfl.sync.down.b32 %f12, %f1, 16, 31, 0xffffffff; add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 8, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 4, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 2, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    shfl.sync.down.b32 %f12, %f1, 1, 31, 0xffffffff;  add.f32 %f1, %f1, %f12;
+    setp.ne.u32 %p3, %r6, 0; @%p3 bra DONE_DAW;
+    mul.wide.u32 %rd15, %r8, 4; add.u64 %rd16, %rd4, %rd15;
+    ld.global.f32 %f15, [%rd16]; fma.rn.f32 %f15, %f1, %f14, %f15; st.global.f32 [%rd16], %f15;
+DONE_DAW:
+    ret;
+}
+
+.visible .entry rust_gpu_swiglu_vec(.param .u64 param_g, .param .u64 param_u, .param .u32 param_n)
+{
+    .reg .pred %p1; .reg .b32 %r<5>; .reg .b64 %rd<6>; .reg .f32 %f<6>;
+    ld.param.u64 %rd1, [param_g]; ld.param.u64 %rd2, [param_u]; ld.param.u32 %r1, [param_n];
+    mov.u32 %r2, %ctaid.x; mov.u32 %r3, %ntid.x; mov.u32 %r4, %tid.x;
+    mad.lo.u32 %r4, %r2, %r3, %r4; setp.ge.u32 %p1, %r4, %r1; @%p1 bra DONE_SW;
+    mul.wide.u32 %rd3, %r4, 4; add.u64 %rd4, %rd1, %rd3; add.u64 %rd5, %rd2, %rd3;
+    ld.global.f32 %f1, [%rd4]; ld.global.f32 %f2, [%rd5];
+    mul.f32 %f3, %f1, 0fBFB8AA3B; ex2.approx.ftz.f32 %f3, %f3;
+    add.f32 %f3, %f3, 0f3F800000; rcp.approx.ftz.f32 %f3, %f3;
+    mul.f32 %f4, %f1, %f3; mul.f32 %f4, %f4, %f2; st.global.f32 [%rd4], %f4;
+DONE_SW:
+    ret;
+}

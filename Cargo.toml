@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mark-core",
+    "crates/mark-engine",
+    "crates/mark-tools",
+    "crates/mark-app",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+authors = ["thu12dta3"]
+
+[workspace.dependencies]
+mark-core = { path = "crates/mark-core" }
+mark-engine = { path = "crates/mark-engine" }
+mark-tools = { path = "crates/mark-tools" }
+
+anyhow = "1.0"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "fs", "io-util", "sync", "time", "net"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "multipart"] }
+futures-util = "0.3"
+bytes = "1"
+sha2 = "0.10"
+base64 = "0.22"
+argon2 = "0.5"
+aes-gcm = "0.10"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+memmap2 = "0.9"
+rayon = "1"
+regex = "1"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+libc = "0.2"
+dirs = "6"
+walkdir = "2"
+toml = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+panic = "unwind"

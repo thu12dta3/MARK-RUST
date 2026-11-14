@@ -541,6 +541,9 @@ impl SvidEngine {
                 matvec_i8_f32(&ctx_buf, &lw.o_q8, &lw.o_scale, HIDDEN, HIDDEN, &mut attn_out);
             }
             homeostatic_residual_add_inplace(&mut h, &attn_out, 1.8);
+            if dump && l == 1 {
+                dump_h("L1.attn", &h);
+            }
 
             rmsnorm_into(&h, &lw.post_norm, 1e-6, &mut xn);
 
@@ -652,11 +655,19 @@ impl SvidEngine {
                     );
                 }
 
+                if dump && l == 1 {
+                    dump_h("L1.shared", &shared_out);
+                    let ids: Vec<(usize, f32)> = top.iter().map(|(i, w)| (*i, *w)).collect();
+                    println!("L1.top6 {ids:?}");
+                }
                 if !experts_in_gpu {
                     self.routed_experts(lw, top, &xn, &mut mlp_out, false);
                     for j in 0..HIDDEN {
                         mlp_out[j] += shared_out[j];
                     }
+                }
+                if dump && l == 1 {
+                    dump_h("L1.mlp", &mlp_out);
                 }
             }
             homeostatic_residual_add_inplace(&mut h, &mlp_out, 1.8);

@@ -423,6 +423,7 @@ impl GpuEngine {
     }
 
     /// Multiplicacao matriz-vetor int8 com mascara opcional (LM head).
+    #[allow(clippy::too_many_arguments)]
     pub fn matvec_i8(
         &self,
         x: &[f32],
@@ -447,6 +448,7 @@ impl GpuEngine {
     }
 
     /// Projecoes q e kv_a em uma unica submissao.
+    #[allow(clippy::too_many_arguments)]
     pub fn matvec_q_kva(
         &self,
         x: &[f32],
@@ -466,6 +468,7 @@ impl GpuEngine {
     }
 
     /// MLP compartilhada: gate/up na GPU, SwiGLU na GPU, down acumulando em `d_accum`.
+    #[allow(clippy::too_many_arguments)]
     pub fn shared_mlp(
         &self,
         x: &[f32],
@@ -511,6 +514,7 @@ impl GpuEngine {
     }
 
     /// Executa um expert int4 sobre a ativacao, somando `weight` no acumulador.
+    #[allow(clippy::too_many_arguments)]
     pub fn moe_add_expert(
         &self,
         x: &[f32],

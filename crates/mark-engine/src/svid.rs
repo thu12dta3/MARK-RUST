@@ -18,7 +18,7 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use rayon::prelude::*;
 
-use crate::gpu::{self, GpuBuffer, GpuEngine, GpuExperts};
+use crate::gpu::{GpuBuffer, GpuEngine, GpuExperts};
 use crate::kernels::{
     homeostatic_residual_add_inplace, int4_dot_row, int8_matvec, prepare_act_int4, quantize_act_i8,
     rmsnorm_into, svid_1bit_linear_subspace_w1a4, swiglu_inplace, YarnRopeCache,

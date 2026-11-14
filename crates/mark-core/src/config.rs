@@ -229,19 +229,10 @@ impl SpeculativeDecoding {
 }
 
 /// Configuracao de um papel (modelo primario e fallback).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct RoleConfig {
     pub primary_model: String,
     pub secondary_model: String,
-}
-
-impl Default for RoleConfig {
-    fn default() -> Self {
-        Self {
-            primary_model: String::new(),
-            secondary_model: String::new(),
-        }
-    }
 }
 
 /// Configuracao de um provedor de API (chave vive no cofre, nao aqui).

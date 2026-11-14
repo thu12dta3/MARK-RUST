@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 
 import base64
 import hashlib
@@ -217,6 +218,49 @@ def _token() -> str:
 
 ENGINE_STATE: dict[str, object] = {"engine": "rust", "port": 8931}
 
+REASONING_PARAMS: dict[str, dict[str, float]] = {
+    "instant": {"loops": 1, "max_tokens": 512, "temperature": 0.2},
+    "balanced": {"loops": 2, "max_tokens": 2048, "temperature": 0.3},
+    "medium": {"loops": 2, "max_tokens": 2048, "temperature": 0.3},
+    "deep": {"loops": 3, "max_tokens": 4096, "temperature": 0.15},
+    "high": {"loops": 3, "max_tokens": 4096, "temperature": 0.15},
+}
+
+
+def reasoning_spec() -> tuple[str, dict[str, float]]:
+    """Nivel de raciocinio ativo e os parametros reais que ele implica."""
+    try:
+        from .config import get_reasoning_level
+
+        level = str(get_reasoning_level() or "balanced")
+    except Exception:
+        level = "balanced"
+    return level, REASONING_PARAMS.get(level, REASONING_PARAMS["balanced"])
+
+
+def _model_ceiling(model: str) -> int | None:
+    try:
+        from .ui.model_scanner import scan_model
+
+        ceiling = scan_model(model).get("context")
+        return int(ceiling) if ceiling else None
+    except Exception:
+        return None
+
+
+def _inference_num_ctx(model: str) -> int:
+    """Contexto efetivo: min(configurado, teto real do modelo)."""
+    try:
+        from .config import get_local_inference_params
+
+        configured = int(get_local_inference_params().get("num_ctx") or 0)
+    except Exception:
+        configured = 0
+    ceiling = _model_ceiling(model)
+    if ceiling and configured:
+        return min(configured, ceiling)
+    return ceiling or configured or 4096
+
 
 def set_active_engine(engine: str, port: int = 8931) -> None:
     """Define o motor local que recebe as proximas requisicoes de chat."""
@@ -252,6 +296,20 @@ def _engine_base() -> str:
     return API
 
 
+TRACE_PATH = Path.home() / ".local" / "state" / "mark" / "http_trace.log"
+
+
+def _trace(direction: str, url: str, detail: str) -> None:
+    """Grava cada requisicao/resposta HTTP para auditoria forense."""
+    try:
+        TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%H:%M:%S")
+        with TRACE_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{stamp}] {direction} {url}\n{detail}\n")
+    except OSError:
+        pass
+
+
 def _request(path: str, payload: dict | None = None, timeout: int = 240):
     try:
         token = _token()
@@ -267,12 +325,76 @@ def _request(path: str, payload: dict | None = None, timeout: int = 240):
     base = API
     if path.startswith("/v1/chat/completions") or path.startswith("/v1/completions"):
         base = _engine_base()
-    request = urllib.request.Request(base.rstrip("/") + path, data=data, headers=headers)
+    engine = str(ENGINE_STATE.get("engine") or "rust")
+    level, spec = reasoning_spec()
+    body_payload = dict(payload) if payload else None
+    if body_payload is not None and (path.startswith("/v1/chat/completions") or path.startswith("/v1/completions")):
+        model_name = str(body_payload.get("model") or "")
+        body_payload.setdefault("max_tokens", int(spec["max_tokens"]))
+        body_payload.setdefault("temperature", float(spec["temperature"]))
+        body_payload["reasoning_level"] = level
+        body_payload["reasoning_loops"] = int(spec["loops"])
+        if engine == "rust":
+            try:
+                from .rust_bridge import rust
+
+                models = rust.server_status().get("models") or []
+                if models:
+                    body_payload["model"] = models[0]
+            except Exception:
+                pass
+        if engine == "ollama":
+            body_payload["options"] = {
+                "num_ctx": _inference_num_ctx(model_name),
+                "num_predict": int(spec["max_tokens"]),
+                "temperature": float(spec["temperature"]),
+            }
+            body_payload.pop("max_tokens", None)
+            body_payload.pop("temperature", None)
+            body_payload.pop("reasoning_level", None)
+            body_payload.pop("reasoning_loops", None)
+            body_payload["stream"] = False
+            path = "/api/chat"
+        data = json.dumps(body_payload, ensure_ascii=False).encode("utf-8")
+    url = base.rstrip("/") + path
+    _trace("-->", url, json.dumps(body_payload, ensure_ascii=False)[:1500] if body_payload else "(sem corpo)")
+    request = urllib.request.Request(url, data=data, headers=headers)
     validate_url_scheme(request)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec: B310
-            return response.status, response.read()
+            body = response.read()
+            _trace("<--", url, f"HTTP {response.status}\n{body[:1500].decode('utf-8', 'replace')}")
+            if engine == "ollama" and path == "/api/chat":
+                payload_json = json.loads(body.decode("utf-8", "replace"))
+                message = payload_json.get("message") or {}
+                translated = {
+                    "id": "chatcmpl-ollama",
+                    "object": "chat.completion",
+                    "model": payload_json.get("model", ""),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": message.get("content", "")},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": payload_json.get("prompt_eval_count", 0),
+                        "completion_tokens": payload_json.get("eval_count", 0),
+                    },
+                }
+                return response.status, json.dumps(translated).encode("utf-8")
+            return response.status, body
     except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = ""
+        _trace("<--", url, f"HTTP {exc.code} {exc.reason}\n{detail[:1500]}")
+        raise RuntimeError(
+            f"HTTP {exc.code} {exc.reason} em {url}"
+            + (f" :: {detail.strip()[:600]}" if detail.strip() else " :: corpo vazio")
+        ) from exc
         if exc.code == 429:
             raise RuntimeError("Limite de taxa excedido (HTTP 429). Aguarde alguns instantes antes de enviar nova mensagem.") from exc
         if exc.code == 502:

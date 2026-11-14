@@ -71,6 +71,7 @@ pub async fn generate_streaming(
     prompt: &str,
     cancel: Arc<AtomicBool>,
     tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>,
+    reasoning_loops: Option<u32>,
 ) -> Result<()> {
     let mut messages: Vec<ChatMessage> = Vec::with_capacity(ctx.history.len() + 2);
     if let Some(s) = &ctx.system {
@@ -154,8 +155,12 @@ pub async fn generate_streaming(
             let req = CompletionRequest {
                 model: model.clone(),
                 messages,
-                temperature: config.temperature,
-                max_tokens: 2048,
+                temperature: if reasoning_loops.unwrap_or(2) >= 3 { 0.15 } else { config.temperature },
+                max_tokens: match reasoning_loops.unwrap_or(2) {
+                    1 => 512,
+                    3 => 4096,
+                    _ => 2048,
+                },
                 top_p: 0.8,
                 top_k: 40,
                 stream: true,

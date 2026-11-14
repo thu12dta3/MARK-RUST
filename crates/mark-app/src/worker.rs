@@ -207,6 +207,7 @@ fn run(rx: Receiver<Job>, tx: Sender<Ev>, cancel: Arc<AtomicBool>) {
                         &prompt,
                         cancel2,
                         tx_stream,
+                        None,
                     ));
                     let mut done = false;
                     let mut emitted = 0u32;

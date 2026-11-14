@@ -189,7 +189,11 @@ class RustBridge:
         if exe is None:
             return {"ok": False, "port": port, "message": f"{SERVER_BIN} not compiled in {BIN_DIR}"}
         if not self._port_free(port):
-            return {"ok": False, "port": port, "message": f"port {port} is already in use"}
+            # Ja existe um mark-server escutando: adota em vez de falhar.
+            if self._probe_http(port):
+                self._server_port = port
+                return {"ok": True, "port": port, "message": f"adopted existing mark-server on {port}"}
+            return {"ok": False, "port": port, "message": f"port {port} is already in use by another process"}
         log_path = data_home() / "logs" / "mark-server.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         args = [str(exe), "--port", str(port)]

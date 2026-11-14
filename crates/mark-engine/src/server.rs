@@ -56,6 +56,12 @@ struct ChatRequest {
     stream: bool,
     #[serde(default)]
     max_tokens: Option<u32>,
+    #[serde(default)]
+    reasoning_level: Option<String>,
+    #[serde(default)]
+    reasoning_loops: Option<u32>,
+    #[serde(default)]
+    temperature: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -275,13 +281,22 @@ async fn handle(
                 return write_json(&mut stream, 400, &payload.to_string()).await;
             }
         };
-        if !req.model.is_empty() && req.model != model {
+        let alias_ok = req.model.is_empty()
+            || req.model.eq_ignore_ascii_case(&model)
+            || req.model.to_ascii_lowercase().starts_with("mark");
+        if !alias_ok {
             let payload = serde_json::json!({
                 "error": {"message": format!("modelo desconhecido: {} (servindo {model})", req.model)}
             });
             return write_json(&mut stream, 404, &payload.to_string()).await;
         }
         let limit = req.max_tokens.unwrap_or(0) as usize;
+        let loops = req.reasoning_loops.or_else(|| match req.reasoning_level.as_deref() {
+            Some("instant") => Some(1),
+            Some("balanced") | Some("medium") => Some(2),
+            Some("deep") | Some("high") => Some(3),
+            _ => None,
+        });
         // O socket e as rotas de status ficam instantaneos; so a inferencia espera
         // o carregamento do motor (lazy load), com teto de 300 s.
         let mut waited = 0u32;
@@ -334,7 +349,7 @@ async fn handle(
             let model2 = model.clone();
             let mut emitted = 0usize;
             tokio::spawn(async move {
-                let _ = generate_streaming(&engine2, &ctx, &prompt, cancel, tx).await;
+                let _ = generate_streaming(&engine2, &ctx, &prompt, cancel, tx, loops).await;
             });
             while let Some(ev) = rx.recv().await {
                 match ev {
@@ -406,7 +421,7 @@ async fn handle(
                 system: system2,
                 history: history2,
             };
-            let _ = generate_streaming(&engine2, &ctx2, &prompt2, cancel2, tx2).await;
+            let _ = generate_streaming(&engine2, &ctx2, &prompt2, cancel2, tx2, loops).await;
         });
         let mut text = String::new();
         while let Some(ev) = rx2.recv().await {

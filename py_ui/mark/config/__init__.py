@@ -251,6 +251,9 @@ def load_config() -> dict:
                 cfg[section].update(values)
         if "reasoning_level" in local:
             cfg["reasoning_level"] = normalize_reasoning_level(local["reasoning_level"])
+        for scalar_key in ("engine", "selected_model"):
+            if scalar_key in local:
+                cfg[scalar_key] = local[scalar_key]
     if "local_inference" in cfg and isinstance(cfg["local_inference"], dict):
         cfg["local_inference"] = validate_and_clamp_inference_params(cfg["local_inference"])
     if os.getenv("MARK_KNOWLEDGE_DB"):

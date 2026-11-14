@@ -763,13 +763,21 @@ class MainWindow(
         text = text.replace(fragment, tr(key))
     return text
 
-  def _select_engine(self, key: str, label: str) -> None:
+  def _select_engine(self, key: str, label: str, persist: bool = True) -> None:
       """Troca o motor local ativo e persiste a escolha."""
       self.active_engine = key
       if hasattr(self, "engine_button"):
           self.engine_button.setText(label)
       from PyQt6.QtCore import QSettings
       QSettings("miceworks", "MARK").setValue("engine/backend", key)
+      if persist:
+          try:
+              from ..config import load_config, save_config
+              cfg = load_config() or {}
+              cfg["engine"] = key
+              save_config(cfg)
+          except Exception:
+              pass
       QSettings("miceworks", "MARK").sync()
       if hasattr(self, "routing_target_badge"):
           self._update_routing_target_badge()
@@ -891,13 +899,25 @@ class MainWindow(
               self.model_selector.setCurrentIndex(index)
               return
 
+  def _alive_label(self, attribute: str) -> Any:
+    """Devolve o QLabel apenas se o objeto C++ ainda existir."""
+    widget = getattr(self, attribute, None)
+    if widget is None:
+      return None
+    try:
+      widget.text()
+    except RuntimeError:
+      setattr(self, attribute, None)
+      return None
+    return widget
+
   def _update_mode_empty_state(self, specialization: str) -> None:
-      """Estado vazio por modo: Engineer mostra o que construir e o PC cadastrado."""
-      title = getattr(self, "empty_title", None)
-      hint = getattr(self, "empty_hint", None)
-      eyebrow = getattr(self, "empty_eyebrow", None)
-      if title is None or hint is None:
-          return
+    """Estado vazio por modo, sobrevivendo ao rebuild da conversa."""
+    title = self._alive_label("empty_title")
+    hint = self._alive_label("empty_hint")
+    eyebrow = self._alive_label("empty_eyebrow")
+    if title is None or hint is None:
+      return
       if specialization == "engineer":
           hardware = self.engineer_bar.hardware_line() if hasattr(self, "engineer_bar") else ""
           title.setText(tr("What shall we build?"))
@@ -1026,7 +1046,21 @@ class MainWindow(
       return
     selector.blockSignals(True)
     selector._pin_local_mark_model()
-    if getattr(self, "active_engine", "rust") == "rust" and selector.count():
+    saved = ""
+    try:
+      saved = str(selector._settings.value("chat/selected_model") or "")
+    except Exception:
+      saved = ""
+    restored = False
+    if saved:
+      for index in range(selector.count()):
+        meta = selector._models_meta[index] if index < len(selector._models_meta) else {}
+        key = f"{meta.get('provider')}:{meta.get('id')}"
+        if key == saved:
+          selector.setCurrentIndex(index)
+          restored = True
+          break
+    if not restored and getattr(self, "active_engine", "rust") == "rust" and selector.count():
       selector.setCurrentIndex(0)
     selector.blockSignals(False)
     if hasattr(self, "ctx_status_label"):
@@ -1534,8 +1568,20 @@ class MainWindow(
       action.triggered.connect(lambda _checked=False, k=key, l=label: self._select_engine(k, l))
       self._engine_actions[key] = action
     self.engine_button.setMenu(self.engine_menu)
-    self.active_engine = "rust"
-    self._select_engine("rust", "Rust 1-Bit Engine (mark-server)")
+    _engine_labels = {
+      "rust": "Rust 1-Bit Engine (mark-server)",
+      "llamacpp": "llama.cpp (llama-server GGUF)",
+      "ollama": "Local Ollama",
+    }
+    _saved_engine = "rust"
+    try:
+      from ..config import load_config
+      _saved_engine = str((load_config() or {}).get("engine") or "rust")
+    except Exception:
+      _saved_engine = "rust"
+    if _saved_engine not in _engine_labels:
+      _saved_engine = "rust"
+    self._select_engine(_saved_engine, _engine_labels[_saved_engine], persist=False)
     actions.addWidget(self.engine_button)
     self.processing_badge.setVisible(False)
     actions.addWidget(self.processing_badge)
@@ -2207,6 +2253,9 @@ class MainWindow(
       if widget is not None:
         if widget is self.empty_state:
           self.empty_state = None
+        self.empty_title = None
+        self.empty_hint = None
+        self.empty_eyebrow = None
         widget.deleteLater()
     self.last_assistant_reply = ""
     for role, content, created in rows:

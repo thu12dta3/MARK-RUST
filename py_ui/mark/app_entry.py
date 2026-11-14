@@ -39,7 +39,9 @@ def main() -> int:
     surface = QSurfaceFormat.defaultFormat()
     surface.setSwapInterval(1)
     QSurfaceFormat.setDefaultFormat(surface)
-    app = QApplication(sys.argv)
+    from .ui.safety import GuardedApplication, install_guards, show_error_toast
+
+    app = GuardedApplication(sys.argv)
     app.setApplicationName("MARK")
     app.setApplicationDisplayName("MARK")
     app.setOrganizationName("miceworks")
@@ -48,6 +50,7 @@ def main() -> int:
     window = MainWindow()
     window.resize(1280, 850)
     window.show()
+    install_guards(app, on_error=lambda message: show_error_toast(window, message))
     if hasattr(window, "shutdown"):
         app.aboutToQuit.connect(window.shutdown)
     return app.exec()

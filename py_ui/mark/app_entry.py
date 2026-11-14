@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 
+from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QApplication
 
 
@@ -34,6 +35,10 @@ def _resolve_display() -> None:
 def main() -> int:
     _ensure_repo_root_on_path()
     _resolve_display()
+    # Vsync de 1 frame: o pacing acompanha o monitor (30-120 Hz) sem rasgar.
+    surface = QSurfaceFormat.defaultFormat()
+    surface.setSwapInterval(1)
+    QSurfaceFormat.setDefaultFormat(surface)
     app = QApplication(sys.argv)
     app.setApplicationName("MARK")
     app.setApplicationDisplayName("MARK")

@@ -8,6 +8,7 @@ pub mod error;
 pub mod fsutil;
 pub mod models;
 pub mod paths;
+pub mod store;
 pub mod vault;
 
 pub use config::{
@@ -15,4 +16,5 @@ pub use config::{
 };
 pub use error::{CoreError, CoreResult};
 pub use models::{Backend, FitLevel, HardwareProfile, ModelEntry};
+pub use store::EncryptedStore;
 pub use vault::{EncryptedRecord, MasterKey, Vault, VaultHeader};

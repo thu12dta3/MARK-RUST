@@ -209,9 +209,12 @@ impl OllamaClient {
             .json(&body)
             .send()
             .await
-            .context("falha na requisicao de streaming ao Ollama")?
-            .error_for_status()
-            .context("Ollama respondeu com erro")?;
+            .context("falha na requisicao de streaming ao Ollama")?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            bail!("Ollama respondeu {status}: {body}");
+        }
 
         let mut stream = resp.bytes_stream();
         let mut buf = String::new();

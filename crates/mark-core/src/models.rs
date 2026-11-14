@@ -147,7 +147,8 @@ fn read_total_ram() -> Option<u64> {
     None
 }
 
-/// Detecta VRAM e nome da GPU. Le `/proc/driver/nvidia/gpus/*/information` quando disponivel.
+/// Detecta VRAM e nome da GPU. Le `/proc/driver/nvidia/gpus/*/information` quando
+/// disponivel e, se o driver NVML estiver dessincronizado, cai para a API CUDA.
 fn detect_gpu() -> (u64, String) {
     let mut best_vram = 0u64;
     let mut best_name = String::new();
@@ -162,24 +163,81 @@ fn detect_gpu() -> (u64, String) {
             for line in text.lines() {
                 if let Some(v) = line.strip_prefix("Model:") {
                     name = v.trim().to_string();
-                } else if let Some(v) = line.strip_prefix("IRQ:") {
-                    let _ = v;
                 }
             }
-            // FB memory: usa `nvidia-smi` se disponivel, senao /proc/meminfo do driver.
             if let Some(v) = read_proc_fb_memory(&e.path()) {
                 vram = v;
             }
-            if vram > best_vram {
-                best_vram = vram;
+            if name.contains("NVIDIA") && name.len() > best_name.len() {
                 best_name = name;
             }
+            if vram > best_vram {
+                best_vram = vram;
+            }
+        }
+    }
+    if best_vram == 0 || best_name.is_empty() {
+        if let Some((vram, name)) = cuda_probe() {
+            best_vram = vram;
+            best_name = name;
         }
     }
     if best_name.is_empty() {
         best_name = "Sem GPU NVIDIA detectada".to_string();
     }
     (best_vram, best_name)
+}
+
+#[link(name = "dl")]
+extern "C" {
+    fn dlopen(filename: *const libc::c_char, flag: i32) -> *mut libc::c_void;
+    fn dlsym(handle: *mut libc::c_void, symbol: *const libc::c_char) -> *mut libc::c_void;
+}
+
+/// Sonda a GPU pela API CUDA quando o NVML (`nvidia-smi`) esta indisponivel.
+fn cuda_probe() -> Option<(u64, String)> {
+    type CuInit = unsafe extern "C" fn(u32) -> i32;
+    type CuDeviceGet = unsafe extern "C" fn(*mut i32, i32) -> i32;
+    type CuDeviceGetName = unsafe extern "C" fn(*mut libc::c_char, i32, i32) -> i32;
+    type CuDeviceTotalMem = unsafe extern "C" fn(*mut usize, i32) -> i32;
+    unsafe {
+        let handle = dlopen(b"libcuda.so.1\0".as_ptr() as *const libc::c_char, 1);
+        if handle.is_null() {
+            return None;
+        }
+        let p_init = dlsym(handle, b"cuInit\0".as_ptr() as *const libc::c_char);
+        let p_dev = dlsym(handle, b"cuDeviceGet\0".as_ptr() as *const libc::c_char);
+        let p_name = dlsym(handle, b"cuDeviceGetName\0".as_ptr() as *const libc::c_char);
+        let p_mem = dlsym(handle, b"cuDeviceTotalMem_v2\0".as_ptr() as *const libc::c_char);
+        if p_init.is_null() || p_dev.is_null() || p_name.is_null() || p_mem.is_null() {
+            return None;
+        }
+        let cu_init: CuInit = std::mem::transmute(p_init);
+        let cu_dev: CuDeviceGet = std::mem::transmute(p_dev);
+        let cu_name: CuDeviceGetName = std::mem::transmute(p_name);
+        let cu_mem: CuDeviceTotalMem = std::mem::transmute(p_mem);
+        if cu_init(0) != 0 {
+            return None;
+        }
+        let mut dev: i32 = 0;
+        if cu_dev(&mut dev, 0) != 0 {
+            return None;
+        }
+        let mut name_buf = [0i8; 128];
+        if cu_name(name_buf.as_mut_ptr(), 128, dev) != 0 {
+            return None;
+        }
+        let mut total: usize = 0;
+        if cu_mem(&mut total, dev) != 0 {
+            return None;
+        }
+        let bytes: Vec<u8> = name_buf
+            .iter()
+            .take_while(|c| **c != 0)
+            .map(|c| *c as u8)
+            .collect();
+        Some((total as u64, String::from_utf8_lossy(&bytes).into_owned()))
+    }
 }
 
 /// Le a memoria de framebuffer do driver via `nvidia-smi` (roda em processo separado).
@@ -394,5 +452,16 @@ mod tests {
         let before = ids.len();
         ids.dedup();
         assert_eq!(ids.len(), before, "ids duplicados no catalogo Miceworks");
+    }
+
+    #[test]
+    fn detects_nvidia_gpu_even_without_nvml() {
+        let (vram, name) = detect_gpu();
+        if cuda_probe().is_some() {
+            assert!(name.contains("NVIDIA"), "nome inesperado: {name}");
+            assert!(vram > 1_000_000_000, "VRAM suspeita: {vram}");
+        } else {
+            eprintln!("CUDA indisponivel neste host: {name}");
+        }
     }
 }

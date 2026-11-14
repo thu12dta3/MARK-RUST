@@ -75,6 +75,43 @@ pub struct EncryptedRecord {
 }
 
 impl EncryptedRecord {
+    /// Cifra `plaintext` com a chave mestra, AAD e nonce aleatorio.
+    pub fn seal(key: &MasterKey, aad: &[u8], plaintext: &[u8]) -> CoreResult<Self> {
+        let mut nonce = [0u8; NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce);
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_bytes()));
+        let ciphertext = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: plaintext,
+                    aad,
+                },
+            )
+            .map_err(|_| CoreError::Vault("falha ao cifrar registro".into()))?;
+        Ok(Self {
+            algo: RecordAlgo::Aes256Gcm,
+            nonce,
+            ciphertext,
+        })
+    }
+
+    /// Decifra o registro com a chave mestra e o mesmo AAD.
+    pub fn open(&self, key: &MasterKey, aad: &[u8]) -> CoreResult<Vec<u8>> {
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_bytes()));
+        cipher
+            .decrypt(
+                Nonce::from_slice(&self.nonce),
+                Payload {
+                    msg: &self.ciphertext,
+                    aad,
+                },
+            )
+            .map_err(|_| {
+                CoreError::Vault("falha ao decifrar registro (dado corrompido ou adulterado)".into())
+            })
+    }
+
     /// Serializa para bytes: `[algo:1][nonce:12][ciphertext...]`.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(1 + NONCE_LEN + self.ciphertext.len());

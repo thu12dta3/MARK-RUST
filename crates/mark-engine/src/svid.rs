@@ -305,7 +305,11 @@ impl SvidEngine {
 
         let tokenizer = BinTokenizer::load(&tok_path)?;
 
-        let gpu = build_gpu(&st, &st_exp, &lm_q8, &lm_scale, &cjk_mask).ok();
+        let gpu = if std::env::var("MARK_FORCE_CPU").is_ok() {
+            None
+        } else {
+            build_gpu(&st, &st_exp, &lm_q8, &lm_scale, &cjk_mask).ok()
+        };
 
         Ok(Self {
             embed_q8,
@@ -408,6 +412,10 @@ impl SvidEngine {
         let mut shared_out = vec![0.0f32; HIDDEN];
         let yarn = YarnRopeCache::new(pos, ROPE_DIM, HEAD_DIM);
         let gpu_ref = self.gpu.as_ref();
+        let dump = std::env::var("MARK_DUMP").is_ok() && pos + 1 == dump_target();
+        if dump {
+            dump_h("embed", &h);
+        }
 
         for l in 0..N_LAYERS {
             let lw = &self.layers[l];
@@ -648,6 +656,9 @@ impl SvidEngine {
                 }
             }
             homeostatic_residual_add_inplace(&mut h, &mlp_out, 1.8);
+            if dump && matches!(l, 0 | 1 | 10 | 14 | 22 | 26) {
+                dump_h(&format!("L{l}"), &h);
+            }
         }
 
         // Bloco recorrente LRD 1-bit (camada 30 enxertada), aplicado `core_loops` vezes.
@@ -669,8 +680,14 @@ impl SvidEngine {
             );
             homeostatic_residual_add_inplace(&mut h, &d1[0..HIDDEN], 0.001);
         }
+        if dump {
+            dump_h("lrd", &h);
+        }
 
         rmsnorm_into(&h, &self.final_norm, 1e-6, &mut xn);
+        if dump {
+            dump_h("final_norm", &xn);
+        }
 
         // LM head int8 com mascara CJK.
         let mut logits = vec![0.0f32; VOCAB];
@@ -701,6 +718,11 @@ impl SvidEngine {
         }
 
         Ok(logits)
+    }
+
+    /// Indica se o caminho GPU PTX esta ativo.
+    pub fn gpu_active(&self) -> bool {
+        self.gpu.is_some()
     }
 
     /// Executa os experts roteados int4 para os experts selecionados.
@@ -951,6 +973,19 @@ fn int4_row_dot(
     x_sc: f32,
 ) -> f32 {
     int4_dot_row(packed, scales, x_even, x_odd, group_bias, x_sc)
+}
+
+fn dump_target() -> usize {
+    std::env::var("MARK_DUMP_POS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+fn dump_h(tag: &str, h: &[f32]) {
+    let l2: f32 = h.iter().map(|v| v * v).sum::<f32>().sqrt();
+    let head: Vec<f32> = h.iter().take(4).copied().collect();
+    println!("{tag} l2={l2:.6} h0..3={head:.6?}");
 }
 
 fn build_gpu(

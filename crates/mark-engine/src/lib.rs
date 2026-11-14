@@ -1,9 +1,11 @@
 //! Fachada do motor de inferencia: escolhe o backend real conforme o modelo.
 
+pub mod gguf;
 pub mod gpu;
 pub mod http_backends;
 pub mod kernels;
 pub mod safetensors;
+pub mod server;
 pub mod svid;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -298,11 +300,28 @@ pub fn build_engine(
                 config,
             })
         }
-        mark_core::Backend::LlamaCppGguf | mark_core::Backend::MarkSafetensors => {
-            bail!(
-                "backend {:?} exige um servidor llama.cpp ativo; use o botao 'Servidor Local' para iniciar",
-                entry.backend
-            )
+        mark_core::Backend::LlamaCppGguf => {
+            let path = entry
+                .path
+                .as_ref()
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("entrada gguf sem caminho local"))?;
+            crate::gguf::prepare_gguf_engine(&path, config)
+        }
+        mark_core::Backend::MarkSafetensors => {
+            let path = entry
+                .path
+                .as_ref()
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("entrada safetensors sem caminho local"))?;
+            if path.extension().and_then(|e| e.to_str()) == Some("gguf") {
+                crate::gguf::prepare_gguf_engine(&path, config)
+            } else {
+                bail!(
+                    "safetensors exige conversao previa: use convert_hf_to_gguf.py em {} e recarregue o catalogo",
+                    path.display()
+                )
+            }
         }
     }
 }

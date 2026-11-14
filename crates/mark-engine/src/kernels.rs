@@ -231,7 +231,10 @@ pub fn int4_dot_row(
 ) -> f32 {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if std::env::var("MARK_NO_AVX2").is_err()
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("fma")
+        {
             return unsafe { avx2_int4_dot_row(packed, scales, x_even, x_odd, group_bias, x_sc) };
         }
     }
@@ -311,7 +314,7 @@ pub fn dot_i8(a: &[i8], b: &[i8]) -> i32 {
     assert_eq!(a.len(), b.len(), "dot_i8: tamanhos divergentes");
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if std::env::var("MARK_NO_AVX2").is_err() && is_x86_feature_detected!("avx2") {
             return unsafe { avx2_dot_i8(a, b) };
         }
     }

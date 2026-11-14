@@ -26,10 +26,15 @@ fn main() -> Result<()> {
     };
     let t0 = Instant::now();
     let engine = SvidEngine::load(&ckpt)?;
-    println!("carga: {:.2}s", t0.elapsed().as_secs_f32());
+    println!("carga: {:.2}s gpu={}", t0.elapsed().as_secs_f32(), engine.gpu_active());
 
     let tok = engine.tokenizer();
-    let prompt_ids = tok.prompt_ids.clone();
+    let mut prompt_ids = tok.prompt_ids.clone();
+    if let Ok(n) = std::env::var("MARK_PROMPT_LEN") {
+        if let Ok(n) = n.parse::<usize>() {
+            prompt_ids.truncate(n.max(1));
+        }
+    }
     if prompt_ids.len() < 2 {
         bail!("checkpoint sem prompt de referencia");
     }

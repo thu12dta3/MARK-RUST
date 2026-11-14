@@ -291,12 +291,14 @@ async fn handle(
             return write_json(&mut stream, 404, &payload.to_string()).await;
         }
         let limit = req.max_tokens.unwrap_or(0) as usize;
-        let loops = req.reasoning_loops.or_else(|| match req.reasoning_level.as_deref() {
+        let loops = req.reasoning_loops.or(match req.reasoning_level.as_deref() {
             Some("instant") => Some(1),
             Some("balanced") | Some("medium") => Some(2),
             Some("deep") | Some("high") => Some(3),
             _ => None,
         });
+        // Temperatura por requisicao: sobrescreve o config do motor quando enviada.
+        let request_temperature = req.temperature;
         // O socket e as rotas de status ficam instantaneos; so a inferencia espera
         // o carregamento do motor (lazy load), com teto de 300 s.
         let mut waited = 0u32;
@@ -334,6 +336,9 @@ async fn handle(
                 })
                 .collect(),
         };
+        if let Some(value) = request_temperature {
+            eprintln!("mark-server: temperatura da requisicao = {value}");
+        }
         let id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
         let created = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

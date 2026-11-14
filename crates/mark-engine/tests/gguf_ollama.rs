@@ -54,7 +54,7 @@ fn imports_real_gguf_into_ollama_and_generates() {
     let mut text = String::new();
     let ctx = ChatContext::default();
     rt.block_on(async {
-        let gen = generate_streaming(&engine, &ctx, "Diga apenas: ok", cancel.clone(), tx);
+        let gen = generate_streaming(&engine, &ctx, "Diga apenas: ok", cancel.clone(), tx, None);
         let drive = async {
             while let Some(ev) = rx.recv().await {
                 match ev {

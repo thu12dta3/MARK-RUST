@@ -1634,6 +1634,34 @@ class InferenceSliderWidget(QWidget):
     self.slider.valueChanged.connect(self._on_slider_value_changed)
     layout.addWidget(self.slider)
 
+  def set_range(self, minimum: int, maximum: int, value: int | None = None) -> int:
+    """Reajusta o QSlider fisico ao teto real do modelo, preservando o valor."""
+    minimum = int(minimum)
+    maximum = max(minimum + 1, int(maximum))
+    current = int(self._current_value if value is None else value)
+    current = max(minimum, min(maximum, current))
+    self.slider.blockSignals(True)
+    self.min_val = minimum
+    self.max_val = maximum
+    self.slider.setMinimum(minimum)
+    self.slider.setMaximum(maximum)
+    self.slider.setSingleStep(max(1, (maximum - minimum) // 100))
+    self.slider.setPageStep(max(1, (maximum - minimum) // 10))
+    self.slider.setValue(current)
+    self._current_value = current
+    self.line_edit.blockSignals(True)
+    self.line_edit.setText(str(current))
+    self.line_edit.blockSignals(False)
+    validator = self.line_edit.validator()
+    if validator is not None:
+      try:
+        validator.setBottom(minimum)
+        validator.setTop(maximum)
+      except Exception:
+        pass
+    self.slider.blockSignals(False)
+    return current
+
   def _on_slider_value_changed(self, val: int) -> None:
     clamped = max(self.min_val, min(self.max_val, int(val)))
     self._current_value = clamped

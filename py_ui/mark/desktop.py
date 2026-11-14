@@ -54,6 +54,15 @@ DESKTOP_CONVERSATIONS_FILE = Path.home() / ".local/state/mark/desktop-conversati
 VOICE_SERVICE = "mark-voice.service"
 MOBILE_SERVICE = "mark-mobile.service"
 
+
+import faulthandler as _faulthandler
+from pathlib import Path as _FaultPath
+
+# Pilha completa em SIGSEGV/SIGABRT (Wayland/Qt).
+_FAULT_LOG = _FaultPath.home() / '.local' / 'state' / 'mark' / 'crash_fault.log'
+_FAULT_LOG.parent.mkdir(parents=True, exist_ok=True)
+_faulthandler.enable(file=open(_FAULT_LOG, 'a', buffering=1), all_threads=True)
+
 class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, ProfessorMixin, AttachmentsMixin, SettingsMixin, PackagesMixin, QMainWindow):
     def __init__(self):
         super().__init__()

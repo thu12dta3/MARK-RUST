@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
   QApplication,
@@ -116,6 +116,25 @@ from .i18n import (
   set_language,
   tr,
 )
+
+
+class _CtxProbe(QThread):
+  """Le o perfil do modelo fora da thread da interface."""
+
+  done = pyqtSignal(str, object, object)
+
+  def __init__(self, model_id: str, parent: Any = None) -> None:
+    super().__init__(parent)
+    self._model_id = model_id
+
+  def run(self) -> None:
+    try:
+      from .model_scanner import scan_model
+
+      profile = scan_model(self._model_id)
+      self.done.emit(self._model_id, profile.get("context"), profile.get("layers"))
+    except Exception as exc:
+      self.done.emit(self._model_id, None, str(exc))
 
 
 class VoiceCallWidget(QWidget):
@@ -756,6 +775,75 @@ class MainWindow(
           self._update_routing_target_badge()
 
   def _update_ctx_label(self) -> None:
+      """Atualiza o CTX com o ultimo scan conhecido, sem bloquear a interface."""
+      if not hasattr(self, "ctx_status_label"):
+          return
+      from .model_scanner import format_ctx, scan_model
+
+      try:
+          selector = getattr(self, "model_selector", None)
+          model_id = ""
+          if selector is not None:
+              try:
+                  model_id = str(selector.current_model_id() or "")
+              except RuntimeError:
+                  model_id = ""
+          if model_id:
+              cached = scan_model(model_id)
+              if cached.get("ok"):
+                  self.ctx_status_label.setText(format_ctx(cached.get("context")))
+                  self.ctx_status_label.setToolTip(
+                      f"{model_id} context={cached.get('context')} layers={cached.get('layers')}"
+                  )
+                  return
+          self._start_ctx_probe(model_id)
+      except RuntimeError:
+          return
+
+  def _start_ctx_probe(self, model_id: str) -> None:
+      """Dispara o scan em thread propria, reaproveitando uma unica instancia."""
+      probe = getattr(self, "_ctx_probe", None)
+      if probe is not None:
+          try:
+              if probe.isRunning():
+                  return
+          except RuntimeError:
+              probe = None
+      if not model_id:
+          return
+      worker = _CtxProbe(model_id)
+      worker.done.connect(self._on_ctx_scanned)
+      worker.finished.connect(self._on_ctx_probe_finished)
+      self._ctx_probe = worker
+      worker.start()
+
+  def _on_ctx_probe_finished(self) -> None:
+      """Libera a referencia antes de o objeto C++ ser destruido."""
+      probe = getattr(self, "_ctx_probe", None)
+      self._ctx_probe = None
+      if probe is not None:
+          try:
+              probe.deleteLater()
+          except RuntimeError:
+              pass
+
+  def _on_ctx_scanned(self, model_id: str, context: Any, layers: Any) -> None:
+      """Aplica o resultado do scan no rodape (main thread)."""
+      from .model_scanner import format_ctx
+
+      try:
+          selector = getattr(self, "model_selector", None)
+          current = ""
+          if selector is not None:
+              current = str(selector.current_model_id() or "")
+          if model_id and current and model_id != current:
+              return
+          self.ctx_status_label.setText(format_ctx(context))
+          self.ctx_status_label.setToolTip(f"{model_id} context={context} layers={layers}")
+      except RuntimeError:
+          return
+
+  def _legacy_update_ctx_label(self) -> None:
       """Escreve o CTX real do modelo ativo no rodape de status."""
       if not hasattr(self, "ctx_status_label"):
           return
@@ -1017,6 +1105,14 @@ class MainWindow(
           worker.wait(2500)
       except RuntimeError:
         continue
+    probe = getattr(self, "_ctx_probe", None)
+    if probe is not None:
+      try:
+        if probe.isRunning():
+          probe.wait(2000)
+      except RuntimeError:
+        pass
+      self._ctx_probe = None
     self.tasks.clear()
 
   def _install_attachment_bridge(self) -> None:
@@ -1588,8 +1684,16 @@ class MainWindow(
   # -------------------------------------------------------------------------
   # Métodos de Navegação
   # -------------------------------------------------------------------------
+  def _enter_chat_page(self) -> None:
+    """Garante a pagina do Chat visivel antes de qualquer trabalho pesado."""
+    stack = getattr(self, "page_stack", None)
+    chat = getattr(self, "chat_page", None)
+    if stack is not None and chat is not None and stack.currentWidget() is not chat:
+      stack.setCurrentWidget(chat)
+
   def open_chat(self) -> None:
     """Retorna ao índice 0 (Chat)."""
+    self._enter_chat_page()
     self.open_specialized_chat("general")
 
   def open_settings(self) -> None:

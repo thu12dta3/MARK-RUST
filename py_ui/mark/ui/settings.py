@@ -368,22 +368,33 @@ class SettingsWidget(QWidget):
 
     # -------------------------------------------------------------- inference
     def sync_model_limits(self, model_id: str) -> dict[str, Any]:
-        """Ajusta os limites dos sliders ao modelo real escaneado."""
+        """Ajusta a faixa fisica dos sliders ao teto real do modelo escaneado."""
         from .model_scanner import scan_model
 
         profile = scan_model(model_id)
         context = profile.get("context")
         layers = profile.get("layers")
+        params = get_local_inference_params()
         if context and hasattr(self, "slider_ctx"):
+            current = int(params.get("num_ctx") or self.slider_ctx.value())
+            applied = self.slider_ctx.set_range(512, int(context), current)
             self.slider_ctx.max_val = int(context)
             setattr(self.slider_ctx, "max_value", int(context))
+            self._ctx_ceiling = int(context)
             if hasattr(self.slider_ctx, "subtitle_label"):
                 self.slider_ctx.subtitle_label.setText(
                     tr("Model ceiling: {ctx} tokens").format(ctx=f"{int(context):,}")
                 )
+            logger.debug("ctx slider range 512..%s (valor %s)", context, applied)
         if layers and hasattr(self, "slider_gpu"):
+            current_layers = int(params.get("num_gpu") or self.slider_gpu.value())
+            self.slider_gpu.set_range(0, int(layers), current_layers)
             self.slider_gpu.max_val = int(layers)
             setattr(self.slider_gpu, "max_value", int(layers))
+            if hasattr(self.slider_gpu, "subtitle_label"):
+                self.slider_gpu.subtitle_label.setText(
+                    tr("Model layers: {layers}").format(layers=int(layers))
+                )
         return profile
 
     def _build_inference_tab(self) -> QWidget:

@@ -469,6 +469,85 @@ impl Vault {
     }
 }
 
+
+/// Registro de verificacao usado para validar a senha mestra.
+pub const VERIFY_RECORD: &str = "__mark_verify__";
+/// Conteudo esperado do registro de verificacao.
+pub const VERIFY_VALUE: &[u8] = b"mark-vault-ok";
+
+impl Vault {
+    /// Indica se existe um cofre inicializado no caminho informado.
+    pub fn is_initialized(path: &std::path::Path) -> bool {
+        path.is_file() && std::fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false)
+    }
+
+    /// Cria um cofre brand-new, sobrescrevendo qualquer residuo no caminho.
+    pub fn create_fresh(path: impl Into<std::path::PathBuf>, password: &str) -> CoreResult<Self> {
+        let path = path.into();
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+        let mut v = Self::create(path)?;
+        v.unlock(password)?;
+        v.put(VERIFY_RECORD, VERIFY_VALUE)?;
+        v.save()?;
+        Ok(v)
+    }
+
+    /// Desbloqueia validando a senha pelo registro de verificacao.
+    pub fn unlock_verified(&mut self, password: &str) -> CoreResult<()> {
+        self.unlock(password)?;
+        match self.get(VERIFY_RECORD) {
+            Ok(v) if v == VERIFY_VALUE => Ok(()),
+            _ => {
+                self.lock();
+                Err(CoreError::Vault("senha mestra incorreta".into()))
+            }
+        }
+    }
+
+    /// Modo A: troca a senha re-encriptando todos os registros sem perda.
+    pub fn rekey(&mut self, old_password: &str, new_password: &str) -> CoreResult<()> {
+        if new_password.trim().len() < 4 {
+            return Err(CoreError::Vault("senha nova muito curta".into()));
+        }
+        self.unlock_verified(old_password)?;
+        let names: Vec<String> = self.records.keys().cloned().collect();
+        let mut plain: Vec<(String, Vec<u8>)> = Vec::with_capacity(names.len());
+        for name in names {
+            plain.push((name.clone(), self.get(&name)?));
+        }
+        let mut salt = [0u8; SALT_LEN];
+        OsRng.fill_bytes(&mut salt);
+        let key = MasterKey::derive(
+            new_password,
+            &salt,
+            self.header.argon2_m_kib,
+            self.header.argon2_t_cost,
+            self.header.argon2_p_cost,
+        )?;
+        key.lock_in_memory()?;
+        self.header.salt = salt;
+        self.records.clear();
+        self.key = Some(key);
+        for (name, value) in &plain {
+            self.put(name, value)?;
+        }
+        self.save()
+    }
+
+    /// Modo B: apaga o cofre atual e cria um brand-new com senha nova.
+    pub fn factory_reset(
+        path: impl Into<std::path::PathBuf>,
+        new_password: &str,
+    ) -> CoreResult<Self> {
+        if new_password.trim().len() < 4 {
+            return Err(CoreError::Vault("senha nova muito curta".into()));
+        }
+        Self::create_fresh(path, new_password)
+    }
+}
+
 /// AAD por item: vincula o ciphertext ao nome, impedindo trocar itens.
 fn aad_for(name: &str) -> Vec<u8> {
     let mut aad = Vec::with_capacity(4 + name.len());

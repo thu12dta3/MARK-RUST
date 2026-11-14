@@ -11,11 +11,60 @@ use worker::{Ev, HfFile, HfHit, Job, Worker};
 use mark_core::{HardwareProfile, InferenceConfig, ModelEntry, ReasoningLevel, Role, Vault};
 use mark_tools::engineer::{ApprovalMode, EngineerSession};
 
-const BG: Color32 = Color32::from_rgb(0x0D, 0x11, 0x17);
-const PANEL: Color32 = Color32::from_rgb(0x16, 0x1B, 0x22);
-const ACCENT: Color32 = Color32::from_rgb(0x00, 0xD4, 0xFF);
+const BG: Color32 = Color32::from_rgb(0x12, 0x14, 0x17);
+const PANEL: Color32 = Color32::from_rgb(0x0D, 0x0F, 0x11);
+const SURFACE: Color32 = Color32::from_rgb(0x16, 0x19, 0x1D);
+const ELEVATED: Color32 = Color32::from_rgb(0x1A, 0x1D, 0x22);
+const HOVER: Color32 = Color32::from_rgb(0x26, 0x2B, 0x33);
+const BORDER: Color32 = Color32::from_rgb(0x1E, 0x22, 0x28);
+const ACCENT: Color32 = Color32::from_rgb(0x00, 0xD8, 0xF6);
 const OK: Color32 = Color32::from_rgb(0x22, 0xC5, 0x5E);
-const DIM: Color32 = Color32::from_rgb(0x8B, 0x94, 0x9E);
+const TEXT: Color32 = Color32::from_rgb(0xED, 0xED, 0xED);
+const DIM: Color32 = Color32::from_rgb(0x8E, 0x95, 0xA0);
+const MUTED: Color32 = Color32::from_rgb(0x5F, 0x66, 0x72);
+const USER_BUBBLE: Color32 = Color32::from_rgb(0x20, 0x25, 0x2C);
+const GREEN: Color32 = Color32::from_rgb(0x3F, 0xB9, 0x50);
+const RED: Color32 = Color32::from_rgb(0xF8, 0x51, 0x49);
+const SCROLLBAR: Color32 = Color32::from_rgb(0x25, 0x2A, 0x32);
+
+fn card(fill: Color32) -> egui::Frame {
+    egui::Frame::default()
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(10)
+        .inner_margin(egui::Margin::symmetric(12, 10))
+}
+
+fn section(ui: &mut egui::Ui, title: &str) {
+    ui.add_space(4.0);
+    ui.label(RichText::new(title).size(10.5).color(MUTED).strong());
+    ui.add_space(2.0);
+}
+
+fn nav_item(ui: &mut egui::Ui, active: bool, label: &str, badge: Option<&str>) -> bool {
+    let fill = if active { HOVER } else { Color32::TRANSPARENT };
+    let text = if active { ACCENT } else { TEXT };
+    let mut clicked = false;
+    egui::Frame::default()
+        .fill(fill)
+        .corner_radius(7)
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let resp = ui.add(
+                    egui::Label::new(RichText::new(label).size(12.5).color(text))
+                        .sense(egui::Sense::click()),
+                );
+                clicked = resp.clicked();
+                if let Some(b) = badge {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(b).size(9.5).color(MUTED));
+                    });
+                }
+            });
+        });
+    clicked
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -359,41 +408,71 @@ impl App {
     }
 
     fn chat_view(&mut self, ui: &mut egui::Ui) {
+        let width = ui.available_width();
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
             .auto_shrink([false, false])
-            .max_height(480.0)
+            .max_height(ui.available_height() - 132.0)
             .show(ui, |ui| {
                 for m in &self.messages {
-                    let (who, color) = if m.from_user {
-                        ("voce", ACCENT)
+                    if m.from_user {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                            egui::Frame::default()
+                                .fill(USER_BUBBLE)
+                                .corner_radius(8)
+                                .inner_margin(egui::Margin::symmetric(14, 10))
+                                .show(ui, |ui| {
+                                    ui.set_max_width((width * 0.72).max(240.0));
+                                    ui.label(RichText::new(&m.text).size(13.0).color(TEXT));
+                                });
+                        });
                     } else {
-                        ("mark", OK)
-                    };
-                    ui.label(RichText::new(who).color(color).size(11.0).strong());
-                    ui.label(RichText::new(&m.text).size(14.0));
-                    ui.add_space(6.0);
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("MARK").size(11.0).color(ACCENT).strong());
+                        ui.add_space(2.0);
+                        render_markdown(ui, &m.text);
+                        ui.add_space(6.0);
+                    }
                 }
             });
-        ui.separator();
-        ui.add(
-            egui::TextEdit::multiline(&mut self.input)
-                .desired_rows(2)
-                .desired_width(f32::INFINITY)
-                .hint_text("Escreva a mensagem para o MARK"),
-        );
-        ui.horizontal(|ui| {
-            let can = !self.busy && !self.input.trim().is_empty() && !self.models.is_empty();
-            if ui.add_enabled(can, egui::Button::new("Enviar")).clicked() {
-                self.send();
-            }
-            if ui.add_enabled(self.busy, egui::Button::new("Parar")).clicked() {
-                self.worker.stop();
-                self.busy = false;
-                self.status = "interrompido".into();
-            }
-            ui.add(egui::Slider::new(&mut self.max_tokens, 16..=512).text("max tokens"));
-        });
+        ui.add_space(6.0);
+        egui::Frame::default()
+            .fill(SURFACE)
+            .stroke(egui::Stroke::new(1.0, BORDER))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.input)
+                        .desired_rows(2)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Message MARK"),
+                );
+                ui.horizontal(|ui| {
+                    let can = !self.busy && !self.input.trim().is_empty() && !self.models.is_empty();
+                    if ui.add_enabled(can, egui::Button::new("Send")).clicked() {
+                        self.send();
+                    }
+                    if ui.add_enabled(self.busy, egui::Button::new("Stop")).clicked() {
+                        self.worker.stop();
+                        self.busy = false;
+                        self.status = "interrompido".into();
+                    }
+                    ui.add(egui::Slider::new(&mut self.max_tokens, 16..=512).text("max tokens"));
+                    let mdl = self
+                        .models
+                        .get(self.selected)
+                        .map(|m| m.name.clone())
+                        .unwrap_or_else(|| "no model".into());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(mdl).size(11.0).color(MUTED));
+                        ui.label(RichText::new("·").size(11.0).color(MUTED));
+                        ui.label(RichText::new(if self.gpu_ptx.is_some() { "GPU PTX sm_75" } else { "CPU AVX2" }).size(11.0).color(DIM));
+                        ui.label(RichText::new("·").size(11.0).color(MUTED));
+                        ui.label(RichText::new(self.reasoning.label()).size(11.0).color(DIM));
+                    });
+                });
+            });
     }
 
     fn models_view(&mut self, ui: &mut egui::Ui) {
@@ -700,57 +779,112 @@ impl eframe::App for App {
             self.fullscreen = !self.fullscreen;
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
         }
-
         let mut visuals = egui::Visuals::dark();
         visuals.panel_fill = BG;
-        visuals.window_fill = PANEL;
-        visuals.override_text_color = Some(Color32::from_rgb(0xC9, 0xD1, 0xD9));
+        visuals.window_fill = SURFACE;
+        visuals.extreme_bg_color = ELEVATED;
+        visuals.faint_bg_color = SURFACE;
+        visuals.override_text_color = Some(TEXT);
+        visuals.selection.bg_fill = HOVER;
+        visuals.selection.stroke = egui::Stroke::new(1.0, ACCENT);
+        visuals.hyperlink_color = ACCENT;
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, BORDER);
+        visuals.widgets.inactive.bg_fill = SURFACE;
+        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, BORDER);
+        visuals.widgets.hovered.bg_fill = HOVER;
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ACCENT);
+        visuals.widgets.active.bg_fill = ELEVATED;
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT);
+        visuals.window_corner_radius = egui::CornerRadius::same(10);
+        visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+        visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+        visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
         ctx.set_visuals(visuals);
 
-        ui.vertical(|ui| {
-            egui::Frame::default()
-                .fill(PANEL)
-                .inner_margin(egui::Margin::symmetric(10, 8))
-                .show(ui, |ui| self.top_bar(ui));
+        egui::Panel::top("top")
+            .exact_size(46.0)
+            .frame(egui::Frame::default().fill(PANEL).inner_margin(egui::Margin::symmetric(12, 8)))
+            .show(ui, |ui| self.top_bar(ui));
 
-            let body_h = (ui.available_height() - 34.0).max(200.0);
-            ui.horizontal_top(|ui| {
-                egui::Frame::default()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(10, 8))
-                    .show(ui, |ui| {
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(216.0, body_h),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| self.sidebar(ui),
-                        );
-                    });
-                ui.add_space(8.0);
-                egui::Frame::default().fill(BG).show(ui, |ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(ui.available_width(), body_h),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| match self.tab {
-                            Tab::Chat => self.chat_view(ui),
-                            Tab::Models => self.models_view(ui),
-                            Tab::Vault => self.vault_view(ui),
-                            Tab::Download => self.download_view(ui),
-                            Tab::Engineer => self.engineer_view(ui),
-                        },
-                    );
-                });
+        egui::Panel::bottom("status")
+            .exact_size(30.0)
+            .frame(egui::Frame::default().fill(PANEL).inner_margin(egui::Margin::symmetric(12, 5)))
+            .show(ui, |ui| self.status_bar(ui));
+
+        egui::Panel::left("side")
+            .exact_size(224.0)
+            .resizable(false)
+            .frame(egui::Frame::default().fill(PANEL).inner_margin(egui::Margin::symmetric(12, 10)))
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.sidebar(ui));
             });
 
-            egui::Frame::default()
-                .fill(PANEL)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| self.status_bar(ui));
-        });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::default().fill(BG).inner_margin(egui::Margin::symmetric(16, 12)))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                match self.tab {
+                    Tab::Chat => self.chat_view(ui),
+                    Tab::Models => self.models_view(ui),
+                    Tab::Vault => self.vault_view(ui),
+                    Tab::Download => self.download_view(ui),
+                    Tab::Engineer => self.engineer_view(ui),
+                }
+            });
 
         if self.busy {
             ctx.request_repaint_after(std::time::Duration::from_millis(80));
         }
     }
+}
+
+
+fn render_markdown(ui: &mut egui::Ui, text: &str) {
+    let mut in_code = false;
+    let mut code = String::new();
+    let mut lang = String::new();
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            if in_code {
+                code_block(ui, &lang, &code);
+                code.clear();
+                lang.clear();
+                in_code = false;
+            } else {
+                lang = line.trim_start().trim_start_matches("```").trim().to_string();
+                in_code = true;
+            }
+            continue;
+        }
+        if in_code {
+            code.push_str(line);
+            code.push('\n');
+        } else if !line.trim().is_empty() {
+            ui.label(RichText::new(line).size(13.0).color(TEXT));
+        }
+    }
+    if in_code && !code.is_empty() {
+        code_block(ui, &lang, &code);
+    }
+}
+
+fn code_block(ui: &mut egui::Ui, lang: &str, code: &str) {
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(0x0B, 0x0D, 0x0F))
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(12, 8))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(if lang.is_empty() { "code" } else { lang }).size(11.0).color(DIM));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new("Copy").size(11.0).color(ACCENT)).clicked() {
+                        ui.ctx().copy_text(code.to_string());
+                    }
+                });
+            });
+            ui.label(RichText::new(code.trim_end()).monospace().size(12.0).color(TEXT));
+        });
 }
 
 fn cinzelar_catalogo(entries: Vec<ModelEntry>) -> Vec<ModelEntry> {
@@ -796,9 +930,10 @@ fn download_dest(file: &str, external: bool) -> PathBuf {
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     for path in [
+        "/usr/share/fonts/inter/InterVariable.ttf",
+        "/usr/share/fonts/inter/Inter.ttc",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
     ] {
         if let Ok(bytes) = std::fs::read(path) {
             fonts.font_data.insert(

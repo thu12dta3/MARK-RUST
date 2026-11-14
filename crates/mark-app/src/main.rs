@@ -24,9 +24,12 @@ const DIM: Color32 = Color32::from_rgb(0x8E, 0x95, 0xA0);
 const MUTED: Color32 = Color32::from_rgb(0x5F, 0x66, 0x72);
 const USER_BUBBLE: Color32 = Color32::from_rgb(0x20, 0x25, 0x2C);
 const GREEN: Color32 = Color32::from_rgb(0x3F, 0xB9, 0x50);
+#[allow(dead_code)]
 const RED: Color32 = Color32::from_rgb(0xF8, 0x51, 0x49);
+#[allow(dead_code)]
 const SCROLLBAR: Color32 = Color32::from_rgb(0x25, 0x2A, 0x32);
 
+#[allow(dead_code)]
 fn card(fill: Color32) -> egui::Frame {
     egui::Frame::default()
         .fill(fill)
@@ -35,6 +38,7 @@ fn card(fill: Color32) -> egui::Frame {
         .inner_margin(egui::Margin::symmetric(12, 10))
 }
 
+#[allow(dead_code)]
 fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(4.0);
     ui.label(RichText::new(title).size(10.5).color(MUTED).strong());
@@ -327,12 +331,9 @@ impl App {
 
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         ui.add_space(6.0);
-        ui.label(RichText::new("AGENTES & MODOS").color(DIM).size(11.0).strong());
+        section(ui, "AGENTS & MODES");
         for role in Role::ALL {
-            if ui
-                .selectable_label(self.role == role, RichText::new(role.label()).size(13.0))
-                .clicked()
-            {
+            if nav_item(ui, self.role == role, role.label(), None) {
                 self.role = role;
             }
         }
@@ -343,17 +344,19 @@ impl App {
             ReasoningLevel::Medium,
             ReasoningLevel::High,
         ] {
-            if ui
-                .selectable_label(self.reasoning == level, level.label())
-                .clicked()
-            {
+            let badge = match level {
+                ReasoningLevel::Instant => "1x",
+                ReasoningLevel::Medium => "2x",
+                ReasoningLevel::High => "3x",
+            };
+            if nav_item(ui, self.reasoning == level, level.label(), Some(badge)) {
                 self.reasoning = level;
             }
         }
 
         ui.add_space(12.0);
         ui.separator();
-        ui.label(RichText::new("ESPACO & SISTEMA").color(DIM).size(11.0).strong());
+        section(ui, "SPACE & SYSTEM");
         ui.label(
             RichText::new(format!(
                 "RAM {:.1} GiB",
@@ -388,7 +391,7 @@ impl App {
 
         ui.add_space(12.0);
         ui.separator();
-        ui.label(RichText::new("CONVERSAS RECENTES").color(DIM).size(11.0).strong());
+        section(ui, "RECENT CHATS");
         let mut open: Option<usize> = None;
         for (i, m) in self.messages.iter().enumerate() {
             if m.from_user {
@@ -744,7 +747,7 @@ impl App {
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let (bwrap_txt, bwrap_col) = if self.bwrap {
-                ("BWRAP ativo", OK)
+                ("BWRAP ativo", GREEN)
             } else {
                 ("BWRAP ausente", DIM)
             };

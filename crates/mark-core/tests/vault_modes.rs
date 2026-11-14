@@ -15,7 +15,7 @@ fn brand_new_vault_requires_setup_then_verifies_password() {
     assert!(!Vault::is_initialized(&path), "cofre nao pode existir no primeiro boot");
     let mut v = Vault::create_fresh(&path, "senha-nova-123").unwrap();
     assert!(Vault::is_initialized(&path));
-    assert_eq!(v.get(&VERIFY_RECORD.to_string()).unwrap(), VERIFY_VALUE);
+    assert_eq!(v.get(VERIFY_RECORD).unwrap(), VERIFY_VALUE);
     v.put("api/openai", b"sk-1").unwrap();
     v.save().unwrap();
     v.lock();

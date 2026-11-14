@@ -279,13 +279,22 @@ class NavigationMixin:
             self.specialization_conversations[self.current_specialization] = self.current_conversation_id
         self.current_specialization = specialization
         self._set_active_area(specialization)
+        if hasattr(self, "engineer_panel"):
+            self.engineer_panel.setVisible(specialization == "engineer")
+            if specialization == "engineer":
+                self.engineer_panel.refresh_profile()
+        if hasattr(self, "professor_panel"):
+            self.professor_panel.setVisible(specialization == "professor")
+        if hasattr(self, "_decorate_nav_labels"):
+            self._decorate_nav_labels()
         self.engineer_work_feedback.hide()
         if specialization == "engineer":
             if self._engineer_profile_restore is None:
                 self._engineer_profile_restore = self.model_selector.currentIndex()
             if hasattr(self.model_selector, "select_model_by_name"):
-                if not self.model_selector.select_model_by_name("Claude 3.5 Sonnet"):
-                    self.model_selector.select_model_by_name("Mark Engineer 1.5B") or self.model_selector.select_model_by_name("mark-engineer-1.5b")
+                for candidate in ("Mark-Bin-32B", "Mark Engineer 1.5B", "mark-engineer-1.5b"):
+                    if self.model_selector.select_model_by_name(candidate):
+                        break
             self.model_selector.setToolTip("O Engineer usa o perfil de código configurado e a memória compartilhada.")
             self.model_selector.setEnabled(False)
             self.engineer_chat_badge.setText("ENGINEER · PERFIL DE CÓDIGO")
@@ -314,7 +323,11 @@ class NavigationMixin:
         else:
             self.current_conversation_id = self.specialization_conversations.get(specialization, "")
         self._refresh_conversation_selector(self.current_conversation_id or None)
-        self._load_active_conversation()
+        # Troca de modo nunca bloqueia: a conversa so e recarregada se mudou, e fora do handler.
+        if getattr(self, "_loaded_conversation_id", None) != self.current_conversation_id:
+            from .ui.perf import defer
+
+            defer(self._load_active_conversation, 0)
         self.page_stack.setCurrentWidget(self.chat_page)
         self.input.setFocus()
 

@@ -195,6 +195,23 @@ class RustBridge:
         args = [str(exe), "--port", str(port)]
         if model:
             args.extend(["--model", model])
+        # Parametros reais salvos nos sliders de Advanced Local Inference.
+        try:
+            from .config import get_local_inference_params
+
+            params = get_local_inference_params()
+        except Exception:
+            params = {}
+        mapping = (
+            ("num_ctx", "--ctx"),
+            ("num_gpu", "--gpu-layers"),
+            ("num_thread", "--threads"),
+            ("num_batch", "--batch"),
+        )
+        for key, flag in mapping:
+            value = params.get(key)
+            if value:
+                args.extend([flag, str(int(value))])
         handle = open(log_path, "ab")
         try:
             self._server = subprocess.Popen(args, stdout=handle, stderr=subprocess.STDOUT, start_new_session=True)
@@ -289,6 +306,42 @@ class RustBridge:
 
     def web_search(self, query: str, limit: int = 5) -> dict[str, Any]:
         return self._json(self._run(ENGINEER_BIN, ["--web-search", query, "--limit", str(limit), "--json"], timeout=90))
+
+    def hardware_profile(self, register: bool = False) -> dict[str, Any]:
+        """Perfil de hardware real lido pelo scanner Rust (e opcionalmente gravado)."""
+        result = self._run(ENGINEER_BIN, ["--hw-profile", "--json"], timeout=90)
+        payload = self._json(result)
+        # Se o NVML estiver indisponivel, completa GPU/VRAM pelo probe CUDA do mark-server.
+        gpu = payload.get("gpu") or {}
+        if payload.get("ok") and (not gpu.get("cuda") or not gpu.get("vram_gib")):
+            probe = self.engine_status()
+            if probe.get("gpu"):
+                gpu["name"] = probe.get("device") or gpu.get("name") or "unknown"
+                gpu["vram_gib"] = probe.get("vram_gib") or gpu.get("vram_gib")
+                gpu["compute_capability"] = probe.get("compute_capability") or gpu.get("compute_capability")
+                gpu["cuda"] = True
+                gpu["merged_from_cuda"] = True
+                payload["gpu"] = gpu
+        if register and payload.get("ok"):
+            # Grava tambem o perfil enriquecido pelo CUDA no caminho lido pela UI.
+            stored = Path.home() / ".config" / "mark" / "hardware_profile.json"
+            try:
+                stored.parent.mkdir(parents=True, exist_ok=True)
+                stored.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            except OSError as exc:
+                payload["store_error"] = str(exc)
+            payload["stored"] = str(stored)
+        return payload
+
+    def sentinel_scan(self, path: str) -> dict[str, Any]:
+        """ClamAV em modo somente-leitura atraves do binario Rust."""
+        return self._json(self._run(ENGINEER_BIN, ["--sentinel-scan", path, "--json"], timeout=1800))
+
+    def sentinel_delete(self, path: str, threat: str) -> dict[str, Any]:
+        """Remove um arquivo somente apos autorizacao explicita, com auditoria."""
+        return self._json(
+            self._run(ENGINEER_BIN, ["--sentinel-delete", path, "--threat", threat, "--json"], timeout=120)
+        )
 
     def temp_workspace(self) -> Path:
         target = data_home() / "sandbox"

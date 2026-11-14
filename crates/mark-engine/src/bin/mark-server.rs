@@ -20,6 +20,9 @@ struct Args {
     model: Option<String>,
     gguf: Option<PathBuf>,
     ctx: u32,
+    gpu_layers: Option<u32>,
+    threads: Option<u32>,
+    batch: Option<u32>,
     probe: bool,
 }
 
@@ -30,6 +33,9 @@ fn parse_args() -> Result<Args> {
         model: None,
         gguf: None,
         ctx: 8192,
+        gpu_layers: None,
+        threads: None,
+        batch: None,
         probe: false,
     };
     let mut raw = std::env::args().skip(1);
@@ -46,6 +52,9 @@ fn parse_args() -> Result<Args> {
                 let value = raw.next().unwrap_or_default();
                 args.ctx = value.parse().map_err(|_| anyhow::anyhow!("ctx invalido: {value}"))?;
             }
+            "--gpu-layers" => args.gpu_layers = raw.next().and_then(|v| v.parse().ok()),
+            "--threads" => args.threads = raw.next().and_then(|v| v.parse().ok()),
+            "--batch" => args.batch = raw.next().and_then(|v| v.parse().ok()),
             "--probe" => args.probe = true,
             "--help" | "-h" => {
                 println!("uso: mark-server [--host IP] [--port N] [--model ID] [--gguf PATH] [--ctx N] [--probe]");
@@ -63,6 +72,9 @@ fn probe() -> Result<()> {
         "ok": true,
         "gpu": mark_engine::gpu::gpu_available(),
         "device": mark_engine::gpu::device_name(),
+        "vram_gib": mark_engine::gpu::device_memory_mib().map(|mib| (mib as f64 / 1024.0 * 10.0).round() / 10.0),
+        "compute_capability": mark_engine::gpu::compute_capability()
+            .map(|(major, minor)| format!("sm_{major}{minor}")),
         "backend": if checkpoint.is_some() { "svid-1bit" } else { "ollama" },
         "checkpoint": checkpoint.map(|p| p.to_string_lossy().into_owned()),
         "models_dir": mark_core::paths::models_dir().to_string_lossy().into_owned(),
@@ -133,7 +145,10 @@ fn main() -> Result<()> {
     // O socket abre e responde /health e /v1/models imediatamente; os pesos
     // carregam em background e a primeira inferencia aguarda o slot.
     let (server, slot) = LocalServer::new_lazy(model.clone(), context);
-    eprintln!("mark-server: listening on {addr} model={model} ctx={context} (lazy engine load)");
+    eprintln!(
+        "mark-server: listening on {addr} model={model} ctx={context} gpu_layers={:?} threads={:?} batch={:?} (lazy engine load)",
+        args.gpu_layers, args.threads, args.batch
+    );
     let loader = std::thread::Builder::new()
         .name("mark-engine-loader".into())
         .spawn(move || match build_engine(&args) {

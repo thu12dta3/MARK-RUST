@@ -693,6 +693,12 @@ class MainWindow(
             "call": self.call_nav_button,
         }
 
+        from .perf import frame_interval_ms, install_refresh_tracking, start_background_caches
+
+        self._install_prompt_augmentation()
+        self._fps = install_refresh_tracking()
+        self._frame_ms = frame_interval_ms()
+        start_background_caches()
         self.setWindowTitle("MARK")
         self._install_shortcuts()
         set_language(saved_language(), notify=False)
@@ -736,14 +742,8 @@ class MainWindow(
         QTimer.singleShot(60, self._sync_fullscreen_button)
 
     def _sync_fullscreen_button(self) -> None:
-        if not hasattr(self, "fullscreen_button"):
-            return
-        if self.isFullScreen():
-            self.fullscreen_button.setText(tr("Sair da Tela Cheia (F11)"))
-            self.fullscreen_button.setToolTip(tr("Voltar a janela"))
-        else:
-            self.fullscreen_button.setText(tr("Tela Cheia (F11)"))
-            self.fullscreen_button.setToolTip(tr("Alternar tela cheia com F11"))
+        window = self.window()
+        window.setWindowTitle(window.windowTitle().split(" · ")[0] + (" · fullscreen" if self.isFullScreen() else ""))
 
     def _refresh_telemetry_texts(self) -> None:
         """Reaplica os rotulos de telemetria no idioma ativo."""
@@ -774,22 +774,31 @@ class MainWindow(
         self._sync_fullscreen_button()
 
     def _decorate_nav_labels(self) -> None:
-        """Mantem os icones ao lado dos rotulos traduzidos da sidebar."""
+        """Aplica icones vetoriais monocromaticos e rotulos traduzidos na sidebar."""
+        from .icons import ACTIVE, IDLE, vector_icon
+
         pairs = (
-            ("chat_nav_button", "\U0001F4AC", "Geral", ""),
-            ("engineer_button", "\U0001F6E0", "Engenheiro", ""),
-            ("professor_button", "\U0001F393", "Professor", ""),
-            ("library_nav_button", "\U0001F4CE", "Biblioteca", ""),
-            ("evolution_nav_button", "\u2756", "Evolução", ""),
-            ("call_nav_button", "\U0001F4DE", "Chamada de Voz", ""),
-            ("devices_nav_button", "\U0001F4F1", "Dispositivos", ""),
-            ("tools_button", "\u25EB", "Ferramentas", " \u25BE"),
-            ("settings_nav_button", "\u2699", "Configurações", ""),
+            ("chat_nav_button", "chat", "Geral"),
+            ("engineer_button", "engineer", "Engenheiro"),
+            ("professor_button", "professor", "Professor"),
+            ("library_nav_button", "library", "Biblioteca"),
+            ("evolution_nav_button", "evolution", "Evolução"),
+            ("call_nav_button", "call", "Chamada de Voz"),
+            ("devices_nav_button", "devices", "Dispositivos"),
+            ("tools_button", "tools", "Ferramentas"),
+            ("settings_nav_button", "settings", "Configurações"),
         )
-        for attribute, glyph, key, suffix in pairs:
+        active = self.current_specialization
+        active_map = {"general": "chat_nav_button", "engineer": "engineer_button", "professor": "professor_button"}
+        for attribute, glyph, key in pairs:
             widget = getattr(self, attribute, None)
-            if widget is not None:
-                widget.setText(f"{glyph} {tr(key)}{suffix}")
+            if widget is None:
+                continue
+            colour = ACTIVE if active_map.get(active) == attribute else IDLE
+            widget.setIcon(vector_icon(glyph, colour, 16))
+            widget.setIconSize(QSize(16, 16))
+            suffix = " ▾" if attribute == "tools_button" else ""
+            widget.setText(f"{tr(key)}{suffix}")
 
     def _refresh_dynamic_labels(self) -> None:
         """Reaplica traducoes montadas fora do retranslate estatico."""
@@ -822,8 +831,43 @@ class MainWindow(
         self.model_selector.insertItem(0, "Mark-Bin-32B (1-Bit W1A4, 2M context)", "mark")
         self.model_selector.setCurrentIndex(0)
 
+    def _install_prompt_augmentation(self) -> None:
+        """Anexa hardware do PC e diretrizes de modo ao system prompt real."""
+        original = getattr(self, "get_system_prompt", None)
+        if original is None:
+            return
+
+        def augmented() -> str:
+            base = original()
+            extras: list[str] = []
+            panel = getattr(self, "engineer_panel", None)
+            profile = panel.hardware_prompt() if panel is not None else ""
+            if profile and self.current_specialization == "engineer":
+                extras.append(profile)
+            if self.current_specialization == "engineer":
+                extras.append(
+                    "You are in Engineer mode: plan, inspect, patch and test real files. "
+                    "Show unified diffs and never claim a command ran unless the sandbox returned its output."
+                )
+            if self.current_specialization == "professor":
+                extras.append(
+                    "You are in Professor mode: answer with numbered step cards, highlight formulas, "
+                    "and put code in fenced blocks."
+                )
+            return base + ("\n\n" + "\n".join(extras) if extras else "")
+
+        self.get_system_prompt = augmented
+
+    def _apply_professor_action(self, prompt: str, label: str) -> None:
+        """Injeta a diretriz pedagogica no composer e envia a mensagem."""
+        self.current_specialization = "professor"
+        self.input.setPlainText(prompt)
+        self._append_bubble(prompt, "user", None, auto_scroll=True)
+        self.send_message()
+
     def _build_chat_page(self) -> QWidget:
         content = QWidget()
+        self.chat_page_host = content
         content.setObjectName("contentArea")
         outer_layout = QHBoxLayout(content)
         outer_layout.setContentsMargins(8, 0, 8, 0)
@@ -915,8 +959,10 @@ class MainWindow(
 
         self.refresh_button = QPushButton()
         self.refresh_button.setObjectName("iconButton")
-        self.refresh_button.setIcon(QIcon())
-        self.refresh_button.setText("↻")
+        from .icons import vector_icon as _vi
+
+        self.refresh_button.setIcon(_vi("refresh", "#8E95A0", 17))
+        self.refresh_button.setText("")
         self.refresh_button.setStyleSheet(
             "QPushButton#iconButton { background: #16191D; color: #EDEDED; border: 1px solid #1E2228;"
             " border-radius: 8px; padding: 3px 10px; font-size: 15px; font-weight: 600; }"
@@ -927,14 +973,7 @@ class MainWindow(
         self.refresh_button.clicked.connect(self.refresh_status)
         top.addWidget(self.refresh_button)
 
-        # Tela cheia real: botao no header + atalho global F11
-        self.fullscreen_button = QPushButton("Tela Cheia (F11)")
-        self.fullscreen_button.setObjectName("headerAction")
-        self.fullscreen_button.setToolTip("Alternar tela cheia com F11")
-        self.fullscreen_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
-        top.addWidget(self.fullscreen_button)
-
+        # Tela cheia apenas por atalho (F11), sem botao no header
         # Seletor de idioma ao vivo (English default + 6 locales)
         self.language_selector = QComboBox()
         self.language_selector.setObjectName("languageSelector")
@@ -1061,6 +1100,17 @@ class MainWindow(
         main.addWidget(self.gods_eye_widget)
 
         # Composer Box Completo (com botão Anexar à esquerda, entrada multilinha, seletores dinâmicos e botão cápsula)
+        from .engineer_panel import EngineerPanel
+        from .professor_panel import ProfessorPanel
+
+        # Paineis de modo pre-alocados: trocar de modo apenas alterna visibilidade.
+        self.engineer_panel = EngineerPanel(self.chat_page_host)
+        self.engineer_panel.hide()
+        main.addWidget(self.engineer_panel)
+        self.professor_panel = ProfessorPanel(on_action=self._apply_professor_action, parent=self.chat_page_host)
+        self.professor_panel.hide()
+        main.addWidget(self.professor_panel)
+
         self.composer_box = QFrame()
         self.composer_box.setObjectName("composerBox")
         self.composer_box.setStyleSheet(
@@ -1078,8 +1128,10 @@ class MainWindow(
 
         self.attach_button = QPushButton()
         self.attach_button.setObjectName("attachButton")
-        self.attach_button.setIcon(QIcon())
-        self.attach_button.setText("📎")
+        from .icons import vector_icon as _vi_attach
+
+        self.attach_button.setIcon(_vi_attach("attach", "#8E95A0", 20))
+        self.attach_button.setText("")
         self.attach_button.setToolTip("Anexar arquivos (imagens, documentos, código)")
         self.attach_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.attach_button.setFixedHeight(40)
@@ -1163,8 +1215,10 @@ class MainWindow(
         # Botão de Envio integrado em cápsula ciano
         self.send_button = QPushButton()
         self.send_button.setObjectName("sendButton")
-        self.send_button.setIcon(QIcon())
-        self.send_button.setText("↑")
+        from .icons import vector_icon as _vi_send
+
+        self.send_button.setIcon(_vi_send("send", "#121417", 18))
+        self.send_button.setText("")
         self.send_button.setToolTip("Enviar mensagem")
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.setStyleSheet(
@@ -1751,6 +1805,7 @@ class MainWindow(
     def _load_active_conversation(self) -> None:
         if not hasattr(self, "chat_layout"):
             return
+        self._loaded_conversation_id = self.current_conversation_id
         try:
             db = self._conversation_db()
             try:
@@ -1941,7 +1996,7 @@ class MainWindow(
         self.page_stack.setCurrentWidget(self.library_page)
 
     def open_sentinel(self) -> None:
-        from ..desktop_sentinel import SentinelDialog
+        from .sentinel_panel import SentinelDialog
         dialog = SentinelDialog(self)
         dialog.setStyleSheet(self.styleSheet())
         dialog.exec()
@@ -2102,6 +2157,10 @@ class MainWindow(
         self._task(clear, done, failed)
 
     def _update_routing_target_badge(self, decision: Any | None = None) -> None:
+        if getattr(self, "model_selector", None) is not None and self.model_selector.currentData() == "mark":
+            self.routing_target_badge.setText(tr("Rust 1-Bit Engine (mark-server)"))
+            self.routing_target_badge.setStyleSheet("color: #00D8F6; font-size: 11px; font-weight: 500;")
+            return
         """Atualiza dinamicamente o Indicador de Destino Ativo com a resolução de pré-voo."""
         if not hasattr(self, "routing_target_badge") or self.routing_target_badge is None:
             return

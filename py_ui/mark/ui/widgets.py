@@ -1,12 +1,17 @@
+import re
+
 import json
 import logging
 import threading
 from typing import Any
 from .i18n import tr
+from .icons import vector_icon
 
 from PyQt6.QtCore import QObject, QSettings, QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QIntValidator, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QTextBrowser,
+    QToolButton,
     QAbstractButton,
     QApplication,
     QCheckBox,
@@ -115,7 +120,8 @@ class MessageBubbleWidget(QFrame):
             self.who = None
 
         # Widget interno de mensagem: sem bordas, margens ou fundos, tipografia sans-serif suave e confortavel
-        self.label = QLabel(message_html(self.text))
+        self.content_view = MessageContentView(self.text, role=self.role)
+        self.label = self.content_view.prose_label
         self.label.setObjectName("messageBody")
         self.label.setTextFormat(Qt.TextFormat.RichText)
         self.label.setWordWrap(True)
@@ -168,7 +174,7 @@ class MessageBubbleWidget(QFrame):
 
             self.label.customContextMenuRequested.connect(context_menu)
 
-        layout.addWidget(self.label)
+        layout.addWidget(self.content_view)
 
 
 class ErrorCardWidget(QFrame):
@@ -1946,3 +1952,329 @@ class InferenceRowNavigationWidget(QWidget):
         self._update_badge()
         if secondary_badge is not None:
             secondary_badge.setText(f"● {tr('Secundário')} ({secondary})")
+
+# ---------------------------------------------------------------------------
+# Renderizacao nivel IDE: card de pensamento recolhivel e caixas de codigo
+# ---------------------------------------------------------------------------
+
+IDE_KEYWORDS = {
+    "fn", "pub", "let", "mut", "impl", "struct", "enum", "match", "if", "else", "for", "while",
+    "return", "void", "int", "float", "double", "char", "class", "def", "import", "from", "async",
+    "await", "try", "catch", "throw", "const", "static", "use", "mod", "trait", "where", "loop",
+    "break", "continue", "in", "as", "unsafe", "extern", "crate", "super", "self", "new", "delete",
+    "include", "define", "namespace", "template", "typename", "public", "private", "protected",
+    "virtual", "override", "using", "typedef", "sizeof", "switch", "case", "default", "do", "goto",
+    "lambda", "with", "elif", "except", "finally", "raise", "yield", "global", "assert", "pass",
+    "export", "typeof", "interface", "type", "extends", "implements", "package", "func", "var",
+}
+
+IDE_TYPES = {
+    "String", "Vec", "Option", "Result", "Box", "Arc", "Rc", "HashMap", "BTreeMap", "Self",
+    "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32", "f64", "usize", "isize", "bool",
+    "Path", "PathBuf", "File", "Duration", "Instant", "VkInstance", "VkApplicationInfo",
+    "VkPhysicalDevice", "VkDevice", "VkQueue", "VkSwapchainKHR", "VkCommandBuffer", "VkResult",
+    "GLFWwindow", "VkSurfaceKHR", "VkPipeline", "VkShaderModule", "VkBuffer", "VkDeviceMemory",
+    "std", "core", "alloc", "List", "Dict", "int64", "float32", "socket", "threading",
+}
+
+IDE_CONSTANTS = {"true", "false", "nullptr", "None", "Some", "Ok", "Err", "NULL", "null", "True", "False"}
+
+TOKEN_RE = re.compile(
+    r"(?P<comment>//[^\n]*|/\*[\s\S]*?\*/|#[^\n]*)"
+    r"|(?P<string>\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*')"
+    r"|(?P<number>\b(?:0x[0-9A-Fa-f]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)[fFuUlL]*\b)"
+    r"|(?P<ident>[A-Za-z_][A-Za-z0-9_]*)"
+    r"|(?P<punct>[{}()\[\];,.<>:+\-*/%=!&|^~?@$\\]+)"
+    r"|(?P<space>\s+)"
+)
+
+C_COMMENT = "#5C6370"
+C_STRING = "#98C379"
+C_NUMBER = "#D19A66"
+C_KEYWORD = "#C678DD"
+C_KEYWORD_ALT = "#CC7832"
+C_TYPE = "#56B6C2"
+C_TYPE_ALT = "#E5C07B"
+C_FUNC = "#61AFEF"
+C_MACRO = "#FFC66D"
+C_PUNCT = "#ABB2BF"
+C_PUNCT_ALT = "#89DDFF"
+C_LINENO = "#4B5263"
+
+
+def _escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def highlight_code(code: str) -> str:
+    """Converte codigo puro em HTML colorido sem alterar a indentacao."""
+    out: list[str] = []
+    position = 0
+    following_paren = -1
+    for match in TOKEN_RE.finditer(code):
+        kind = match.lastgroup or ""
+        token = match.group(0)
+        if kind == "space":
+            out.append("&nbsp;" * len(token) if "\n" not in token else token.replace("\n", "<br/>"))
+            continue
+        if following_paren < 0 and "(" in token:
+            following_paren = position
+        if kind == "comment":
+            out.append(f'<span style="color:{C_COMMENT};font-style:italic;">{_escape(token)}</span>')
+        elif kind == "string":
+            out.append(f'<span style="color:{C_STRING};">{_escape(token)}</span>')
+        elif kind == "number":
+            out.append(f'<span style="color:{C_NUMBER};">{_escape(token)}</span>')
+        elif kind == "ident":
+            after = code[match.end():match.end() + 1]
+            if token in IDE_CONSTANTS:
+                out.append(f'<span style="color:{C_NUMBER};">{_escape(token)}</span>')
+            elif token in IDE_KEYWORDS:
+                colour = C_KEYWORD_ALT if token in {"fn", "pub", "impl", "struct", "enum", "use", "mod"} else C_KEYWORD
+                out.append(f'<span style="color:{colour};">{_escape(token)}</span>')
+            elif token in IDE_TYPES or token[:1].isupper():
+                colour = C_TYPE_ALT if token[:1].isupper() and token not in IDE_TYPES else C_TYPE
+                out.append(f'<span style="color:{colour};">{_escape(token)}</span>')
+            elif after == "!":
+                out.append(f'<span style="color:{C_MACRO};">{_escape(token)}</span>')
+            elif after == "(":
+                out.append(f'<span style="color:{C_FUNC};">{_escape(token)}</span>')
+            else:
+                out.append(f'<span style="color:#DCDFE4;">{_escape(token)}</span>')
+        else:
+            colour = C_PUNCT_ALT if token in {"::", "->", "=>", "{", "}", "(", ")", "[", "]"} else C_PUNCT
+            out.append(f'<span style="color:{colour};">{_escape(token)}</span>')
+        position += len(token)
+    return "".join(out)
+
+
+def code_html(code: str) -> str:
+    """HTML completo da caixa de codigo com coluna de numeros de linha."""
+    lines = code.split("\n")
+    width = len(str(max(1, len(lines))))
+    rows: list[str] = []
+    for index, line in enumerate(lines, start=1):
+        body = highlight_code(line) if line else "&nbsp;"
+        rows.append(
+            "<tr>"
+            f'<td style="color:{C_LINENO}; text-align:right; padding:0 12px 0 4px;">{str(index).rjust(width)}</td>'
+            f'<td style="color:#DCDFE4; white-space:nowrap;">{body}</td>'
+            "</tr>"
+        )
+    return (
+        '<table cellspacing="0" cellpadding="0" style="border:0;">'
+        + "".join(rows)
+        + "</table>"
+    )
+
+
+LANGUAGE_LABELS = {
+    "rs": "rust", "py": "python", "js": "javascript", "ts": "typescript", "cpp": "cpp",
+    "cc": "cpp", "cxx": "cpp", "h": "cpp", "hpp": "cpp", "sh": "bash", "bash": "bash",
+    "zsh": "bash", "json": "json", "toml": "toml", "yaml": "yaml", "yml": "yaml",
+    "sql": "sql", "html": "html", "css": "css", "md": "markdown", "text": "text",
+}
+
+
+def normalize_language(raw: str) -> str:
+    key = (raw or "").strip().lower()
+    return LANGUAGE_LABELS.get(key, key or "text")
+
+
+class ThinkingCard(QFrame):
+    """Card recolhivel com o raciocinio interno do modelo."""
+
+    def __init__(self, thinking: str, seconds: float = 0.0, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._body_visible = False
+        self.setObjectName("thinkingCard")
+        self.setStyleSheet(
+            "QFrame#thinkingCard { background: #13171F; border: 1px solid #1E2228;"
+            " border-left: 2px solid #00D8F6; border-radius: 8px; }"
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setSpacing(4)
+        self.toggle = QToolButton()
+        self.toggle.setObjectName("thinkingHeader")
+        self.toggle.setCheckable(True)
+        self.toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        elapsed = f" · {seconds:.1f}s" if seconds > 0 else ""
+        self.toggle.setText(f"{tr('Thought Process')} · {tr('Click to expand/collapse')}{elapsed}")
+        self.toggle.setIcon(vector_icon("think", "#00D8F6", 16))
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setStyleSheet(
+            "QToolButton#thinkingHeader { background: transparent; border: none; color: #8E95A0;"
+            " font-size: 11px; font-weight: 500; padding: 2px 0px; text-align: left; }"
+            "QToolButton#thinkingHeader:hover { color: #00D8F6; }"
+        )
+        self.toggle.toggled.connect(self._set_expanded)
+        layout.addWidget(self.toggle)
+        self.body = QTextBrowser()
+        self.body.setObjectName("thinkingBody")
+        self.body.setOpenExternalLinks(False)
+        self.body.setStyleSheet(
+            "QTextBrowser#thinkingBody { background: transparent; border: none; color: #9AA4B2;"
+            " font-size: 12px; }"
+        )
+        self.body.setHtml(
+            f'<div style="color:#9AA4B2; font-size:12px; line-height:150%;">{_escape(thinking).replace(chr(10), "<br/>")}</div>'
+        )
+        self.body.setVisible(False)
+        self.body.setMaximumHeight(220)
+        layout.addWidget(self.body)
+        self._collapsed_height = 34
+
+    def _set_expanded(self, expanded: bool) -> None:
+        self._body_visible = expanded
+        self.body.setVisible(expanded)
+        glyph = "chevron" if not expanded else "chevron"
+        self.toggle.setIcon(vector_icon(glyph, "#00D8F6", 16))
+
+
+class CodeBlockWidget(QFrame):
+    """Container de codigo com badge de linguagem, numeros de linha e copia."""
+
+    def __init__(self, code: str, language: str = "text", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._code = code
+        self._language = normalize_language(language)
+        self.setObjectName("codeBlock")
+        self.setStyleSheet(
+            "QFrame#codeBlock { background: #0B0E14; border: 1px solid #262C36; border-radius: 10px; }"
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QFrame()
+        header.setObjectName("codeHeader")
+        header.setStyleSheet(
+            "QFrame#codeHeader { background: #161B22; border: none; border-top-left-radius: 10px;"
+            " border-top-right-radius: 10px; }"
+        )
+        bar = QHBoxLayout(header)
+        bar.setContentsMargins(12, 6, 8, 6)
+        bar.setSpacing(8)
+        badge = QLabel(self._language)
+        badge.setStyleSheet("color: #8E95A0; font-size: 10px; font-weight: 600; letter-spacing: 0.6px;")
+        bar.addWidget(badge)
+        bar.addStretch(1)
+        self.copy_button = QPushButton(tr("Copy code"))
+        self.copy_button.setObjectName("copyCodeButton")
+        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_button.setIcon(vector_icon("copy", "#8E95A0", 14))
+        self.copy_button.setStyleSheet(
+            "QPushButton#copyCodeButton { background: transparent; border: 1px solid #262C36;"
+            " border-radius: 6px; color: #ABB2BF; font-size: 10px; font-weight: 500; padding: 3px 8px; }"
+            "QPushButton#copyCodeButton:hover { color: #00D8F6; border-color: #00D8F6; }"
+        )
+        self.copy_button.clicked.connect(self.copy_code)
+        bar.addWidget(self.copy_button)
+        layout.addWidget(header)
+
+        self.view = QTextBrowser()
+        self.view.setObjectName("codeBody")
+        self.view.setFrameShape(QFrame.Shape.NoFrame)
+        self.view.setStyleSheet(
+            "QTextBrowser#codeBody { background: #0B0E14; border: none;"
+            " font-family: 'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', monospace; font-size: 12px; }"
+        )
+        self.view.setHtml(f'<div style="font-family:monospace;">{code_html(code)}</div>')
+        lines = max(1, len(code.split("\n")))
+        self.view.setFixedHeight(min(430, max(56, lines * 18 + 20)))
+        layout.addWidget(self.view)
+
+    def copy_code(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(self._code)
+        self.copy_button.setText(tr("Copied!"))
+        self.copy_button.setIcon(vector_icon("copy", "#00D8F6", 14))
+        QTimer.singleShot(1400, self._reset_button)
+
+    def _reset_button(self) -> None:
+        self.copy_button.setText(tr("Copy code"))
+        self.copy_button.setIcon(vector_icon("copy", "#8E95A0", 14))
+
+
+THINK_PATTERN = re.compile(r"<think(?:ing)?>([\s\S]*?)(?:</think(?:ing)?>|$)", re.IGNORECASE)
+FENCE_PATTERN = re.compile(r"```([A-Za-z0-9_+-]*)\n([\s\S]*?)(?:```|$)")
+
+
+def split_thinking(text: str) -> tuple[str, str]:
+    """Separa o raciocinio (<think>) da resposta final."""
+    match = THINK_PATTERN.search(text or "")
+    if not match:
+        return "", text or ""
+    thinking = match.group(1).strip()
+    answer = (text[:match.start()] + text[match.end():]).strip()
+    return thinking, answer
+
+
+def split_segments(text: str) -> list[tuple[str, str, str]]:
+    """Divide o texto em segmentos ('prose'|'code', conteudo, linguagem)."""
+    segments: list[tuple[str, str, str]] = []
+    cursor = 0
+    for match in FENCE_PATTERN.finditer(text):
+        before = text[cursor:match.start()]
+        if before.strip():
+            segments.append(("prose", before, ""))
+        segments.append(("code", match.group(2).rstrip("\n"), match.group(1)))
+        cursor = match.end()
+    tail = text[cursor:]
+    if tail.strip():
+        segments.append(("prose", tail, ""))
+    return segments or [("prose", text, "")]
+
+
+class MessageContentView(QWidget):
+    """Conteudo da mensagem: pensamento recolhivel, texto e caixas de codigo."""
+
+    def __init__(self, text: str, role: str = "assistant", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.role = role
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        thinking, answer = split_thinking(text)
+        self.thinking_card: ThinkingCard | None = None
+        if thinking:
+            self.thinking_card = ThinkingCard(thinking, parent=self)
+            layout.addWidget(self.thinking_card)
+        self.prose_label = QLabel()
+        self.prose_label.setWordWrap(True)
+        self.prose_label.setTextFormat(Qt.TextFormat.RichText)
+        self.prose_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
+        self._code_blocks: list[CodeBlockWidget] = []
+        first_prose_used = False
+        for kind, content, language in split_segments(answer):
+            if kind == "code":
+                block = CodeBlockWidget(content, language, self)
+                self._code_blocks.append(block)
+                layout.addWidget(block)
+                continue
+            if not first_prose_used:
+                self.prose_label.setText(message_html(content))
+                layout.addWidget(self.prose_label)
+                first_prose_used = True
+            else:
+                extra = QLabel(message_html(content))
+                extra.setWordWrap(True)
+                extra.setTextFormat(Qt.TextFormat.RichText)
+                extra.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse
+                    | Qt.TextInteractionFlag.LinksAccessibleByMouse
+                )
+                layout.addWidget(extra)
+        if not first_prose_used:
+            self.prose_label.setText("")
+            layout.addWidget(self.prose_label)
+

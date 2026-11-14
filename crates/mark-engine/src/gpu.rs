@@ -226,6 +226,75 @@ pub fn device_name() -> Option<String> {
     }
 }
 
+
+type CuMemGetInfoFn = unsafe extern "C" fn(*mut usize, *mut usize) -> i32;
+type CuDeviceGetAttributeFn = unsafe extern "C" fn(*mut i32, i32, i32) -> i32;
+
+fn cuda_handle() -> *mut c_void {
+    unsafe {
+        for name in [b"libcuda.so.1\0".as_slice(), b"libcuda.so\0".as_slice()] {
+            let handle = dlopen(name.as_ptr(), RTLD_LAZY);
+            if !handle.is_null() {
+                return handle;
+            }
+        }
+        ptr::null_mut()
+    }
+}
+
+/// VRAM total do dispositivo 0 em MiB, lida do driver CUDA.
+pub fn device_memory_mib() -> Option<u64> {
+    unsafe {
+        let handle = cuda_handle();
+        if handle.is_null() {
+            return None;
+        }
+        let cu_init: CuInitFn = sym!(handle, "cuInit", CuInitFn);
+        if cu_init(0) != 0 {
+            return None;
+        }
+        let mut get_info: CuMemGetInfoFn = sym!(handle, "cuMemGetInfo_v2", CuMemGetInfoFn);
+        if get_info as usize == 0 {
+            get_info = sym!(handle, "cuMemGetInfo", CuMemGetInfoFn);
+        }
+        if get_info as usize == 0 {
+            return None;
+        }
+        let mut free: usize = 0;
+        let mut total: usize = 0;
+        if get_info(&mut free, &mut total) != 0 || total == 0 {
+            return None;
+        }
+        Some((total / (1024 * 1024)) as u64)
+    }
+}
+
+/// Compute capability (major, minor) do dispositivo 0.
+pub fn compute_capability() -> Option<(i32, i32)> {
+    unsafe {
+        let handle = cuda_handle();
+        if handle.is_null() {
+            return None;
+        }
+        let cu_init: CuInitFn = sym!(handle, "cuInit", CuInitFn);
+        let cu_dev_get: CuDeviceGetFn = sym!(handle, "cuDeviceGet", CuDeviceGetFn);
+        let cu_attr: CuDeviceGetAttributeFn = sym!(handle, "cuDeviceGetAttribute", CuDeviceGetAttributeFn);
+        if cu_init(0) != 0 || cu_attr as usize == 0 {
+            return None;
+        }
+        let mut dev: i32 = 0;
+        if cu_dev_get(&mut dev, 0) != 0 {
+            return None;
+        }
+        let mut major: i32 = 0;
+        let mut minor: i32 = 0;
+        if cu_attr(&mut major, 75, dev) != 0 || cu_attr(&mut minor, 76, dev) != 0 {
+            return None;
+        }
+        Some((major, minor))
+    }
+}
+
 /// Buffer alocado na VRAM, liberado no `Drop`.
 pub struct GpuBuffer {
     ptr: u64,

@@ -891,13 +891,18 @@ impl SvidEngine {
                 }
             };
             let next = sample(&logits, cfg, &mut rng);
+            // Token de fim de sequencia nunca vira texto nem vai para o SSE:
+            // a checagem acontece ANTES de emitir, nao depois.
+            if is_stop_token(next) {
+                break;
+            }
             let text = self.tokenizer.decode_token(next).to_string();
+            if is_special_token_text(&text) {
+                break;
+            }
             ids.push(next);
             state.ids.push(next);
             if !on_token(next, &text) {
-                break;
-            }
-            if next == 1 || next == 100_001 || next == 100_015 {
                 break;
             }
             if ids.len() > 100_000 {
@@ -906,6 +911,17 @@ impl SvidEngine {
         }
         Ok(())
     }
+}
+
+/// Tokens de fim de sequencia do checkpoint (nunca viram texto).
+fn is_stop_token(id: u32) -> bool {
+    matches!(id, 1 | 100_001 | 100_015)
+}
+
+/// Texto de token especial (ex.: `<｜end_of_query｜>`): nunca vai para a bolha
+/// nem para o SSE, mesmo que o id nao esteja na lista de parada.
+fn is_special_token_text(text: &str) -> bool {
+    text.contains("<|") || text.contains("<\u{ff5c}") || text.contains("end_of_sentence")
 }
 
 /// Amostra um token a partir dos logits, respeitando temperatura e top-k.

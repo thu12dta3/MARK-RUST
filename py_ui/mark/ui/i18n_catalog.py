@@ -451,4 +451,18 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
         "Le graphe d'architecture n'a pas encore été généré :",
         "لم يتم إنشاء مخطط البنية بعد:",
     ),
+    "You": ("You", "Você", "你", "आप", "Tú", "Vous", "أنت"),
+    "MARK is thinking": (
+        "MARK is thinking", "MARK está pensando", "MARK 正在思考",
+        "MARK सोच रहा है", "MARK está pensando", "MARK réfléchit", "MARK يفكّر",
+    ),
+    "Thinking...": (
+        "Thinking...", "Pensando...", "思考中...", "सोच रहा है...",
+        "Pensando...", "Réflexion...", "يفكّر...",
+    ),
+    "Thought for {secs}s": (
+        "Thought for {secs}s", "Pensou por {secs}s", "思考了 {secs} 秒",
+        "सोचा {secs} सेकंड", "Pensó {secs}s", "A réfléchi {secs}s",
+        "فكّر لـ {secs} ثانية",
+    ),
 }

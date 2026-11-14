@@ -570,15 +570,9 @@ class MainWindow(
     self.professor_button.setVisible(False)
     self.professor_button.clicked.connect(lambda: self.open_specialized_chat("professor"))
 
-    self.vision_nav_button = QPushButton("Vision")
-    self.vision_nav_button.setObjectName("visionNavButton")
-    self.vision_nav_button.setProperty("class", "navButton")
-    self.vision_nav_button.setIcon(_mark_icon("chat"))
-    self.vision_nav_button.setIconSize(QSize(16, 16))
-    self.vision_nav_button.setFixedHeight(32)
-    self.vision_nav_button.setCursor(Qt.CursorShape.PointingHandCursor)
-    self.vision_nav_button.clicked.connect(lambda: self.open_specialized_chat("vision"))
-    sidebar_layout.addWidget(self.vision_nav_button)
+    # Vision fica dormente: sem botao na sidebar (como Professor e Evolution).
+    # A implementacao segue em mark/desktop_vision.py, apenas nao exposta na UI.
+    self.vision_nav_button = None
 
     sidebar_layout.addSpacing(8)
     section_space = QLabel("ESPAÇO & SISTEMA")
@@ -721,7 +715,6 @@ class MainWindow(
       "general": self.chat_nav_button,
       "engineer": self.engineer_button,
       "professor": self.professor_button,
-      "vision": self.vision_nav_button,
       "library": self.library_nav_button,
       "evolution": self.evolution_nav_button,
       "settings": self.settings_nav_button,
@@ -1024,7 +1017,10 @@ class MainWindow(
     self._thinking_index += 1
     text = tr(key)
     try:
-      self.connection_label.setText(text)
+      # Rotacao vive apenas no indicador inferior, acima do composer.
+      if hasattr(self, "thinking_indicator"):
+        self.thinking_indicator.set_phrase(text)
+        self.thinking_indicator.start()
       if hasattr(self, "engineer_work_label"):
         self.engineer_work_label.setText(text)
     except RuntimeError:
@@ -1103,7 +1099,6 @@ class MainWindow(
       ("chat_nav_button", "chat", "Geral"),
       ("engineer_button", "engineer", "Engenheiro"),
       ("professor_button", "professor", "Professor"),
-      ("vision_nav_button", "chat", "Vision"),
       ("library_nav_button", "library", "Biblioteca"),
       ("evolution_nav_button", "evolution", "Evolução"),
       ("call_nav_button", "call", "Chamada de Voz"),
@@ -1898,7 +1893,6 @@ class MainWindow(
     cp.add_category_header("--- UTILITÁRIOS E MÍDIA ---")
     cp.register_command("Agenda e lembretes", self.open_agenda, "Utilitários")
     cp.register_command("E-mail · Tuta", self.open_email_composer, "Utilitários")
-    cp.register_command("Visão ao vivo / Câmera", self.open_vision, "Utilitários")
     cp.register_command("Alternar escuta por voz", self.toggle_voice, "Utilitários")
 
     cp.add_category_header("--- SISTEMA ---")
@@ -1941,8 +1935,6 @@ class MainWindow(
     agenda_action.triggered.connect(self.open_agenda)
     email_action = self.tools_menu.addAction(_mark_icon("mail"), "E-mail · Tuta")
     email_action.triggered.connect(self.open_email_composer)
-    vision_action = self.tools_menu.addAction(_mark_icon("camera"), "Visão ao vivo / Câmera")
-    vision_action.triggered.connect(self.open_vision)
     self.voice_button = self.tools_menu.addAction(_mark_icon("microphone"), "Escuta por voz")
     self.voice_button.triggered.connect(self.toggle_voice)
 
@@ -2484,10 +2476,10 @@ class MainWindow(
       if hasattr(self, "voice_button"):
         self.voice_button.setText(tr("Parar escuta") if self.voice_active else tr("Iniciar escuta"))
       if hasattr(self, "connection_label"):
+        # O subtitulo do header e SÓ status de conexao/memoria. Pensamento
+        # nunca aparece aqui: vive no indicador inferior do chat.
         self.connection_label.setText(
-          tr("MARK está pensando...")
-          if self.busy
-          else tr("Conectado · memória compartilhada ativa")
+          tr("Conectado · memória compartilhada ativa")
           if states["reachable"]
           else tr("Offline · inicie o serviço do MARK")
         )

@@ -199,8 +199,6 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         agenda_action.triggered.connect(self.open_agenda)
         email_action = self.tools_menu.addAction(_mark_icon("mail"), "E-mail · Tuta")
         email_action.triggered.connect(self.open_email_composer)
-        vision_action = self.tools_menu.addAction(_mark_icon("camera"), "Visão ao vivo / Câmera")
-        vision_action.triggered.connect(self.open_vision)
         self.voice_button = self.tools_menu.addAction(_mark_icon("microphone"), "Escuta por voz")
         self.voice_button.triggered.connect(self.toggle_voice)
 
@@ -568,7 +566,6 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         cp.add_category_header("--- UTILITÁRIOS E MÍDIA ---")
         cp.register_command("Agenda e lembretes", self.open_agenda, "Utilitários")
         cp.register_command("E-mail · Tuta", self.open_email_composer, "Utilitários")
-        cp.register_command("Visão ao vivo / Câmera", self.open_vision, "Utilitários")
         cp.register_command("Alternar escuta por voz", self.toggle_voice, "Utilitários")
 
         cp.add_category_header("--- SISTEMA ---")

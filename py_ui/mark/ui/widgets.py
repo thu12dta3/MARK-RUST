@@ -108,7 +108,7 @@ class MessageBubbleWidget(QFrame):
     # Identificacao Discreta: Remetente/hora em texto secundario fino sans-serif apenas para o usuario
     if is_user:
       orig = source_label(self.source)
-      sender_title = tr("Você") if not orig else f"{tr('Você')} · {orig}"
+      sender_title = tr("You") if not orig else f"{tr('You')} · {orig}"
       self.who = QLabel(sender_title)
       self.who.setObjectName("messageSender")
       self.who.setStyleSheet(
@@ -348,7 +348,8 @@ class ThinkingIndicatorWidget(QFrame):
     self.dot_label.setObjectName("thinkingDot")
     self.dot_label.setStyleSheet("color: #00D8F6; font-size: 11px; border: none; background: transparent;")
 
-    self.text_label = QLabel("MARK está pensando...")
+    self._phrase: str | None = None
+    self.text_label = QLabel(tr("MARK is thinking"))
     self.text_label.setObjectName("thinkingText")
     self.text_label.setStyleSheet(
       "color: #8E95A0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; "
@@ -359,10 +360,15 @@ class ThinkingIndicatorWidget(QFrame):
     layout.addWidget(self.text_label)
     layout.addStretch(1)
 
+  def set_phrase(self, text: str | None) -> None:
+    """Frase dinamica do rotador (sempre ja traduzida pelo chamador)."""
+    self._phrase = text
+
   def _animate_dots(self) -> None:
     self._step = (self._step + 1) % 4
     dots = "." * (self._step + 1)
-    self.text_label.setText(f"MARK está pensando{dots}")
+    base = self._phrase or tr("MARK is thinking")
+    self.text_label.setText(f"{base}{dots}")
 
   def start(self) -> None:
     self.show()

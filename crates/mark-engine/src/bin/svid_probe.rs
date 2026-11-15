@@ -26,7 +26,26 @@ fn main() -> Result<()> {
     };
     let t0 = Instant::now();
     let engine = SvidEngine::load(&ckpt)?;
-    println!("carga: {:.2}s gpu={}", t0.elapsed().as_secs_f32(), engine.gpu_active());
+    println!(
+        "carga: {:.2}s gpu={} onebit={}",
+        t0.elapsed().as_secs_f32(),
+        engine.gpu_active(),
+        engine.is_onebit()
+    );
+    if let Some(ob) = engine.onebit() {
+        let (before, delta, required) = ob.vram_report();
+        println!(
+            "vram: free_before={before} MiB model_delta={delta} MiB required={required} MiB | camadas={} experts={} lrd={}",
+            ob.layer_count(),
+            ob.expert_count(),
+            ob.lrd_count()
+        );
+        println!(
+            "cjk_mask: origem={} ativos={}",
+            ob.cjk_source(),
+            ob.cjk_masked_tokens()
+        );
+    }
 
     let tok = engine.tokenizer();
     let mut prompt_ids = tok.prompt_ids.clone();

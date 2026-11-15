@@ -192,7 +192,7 @@ class ErrorCardWidget(QFrame):
   def __init__(
     self,
     error_text: str,
-    title: str = tr("Falha no Processamento"),
+    title: str = tr("Processing failure"),
     retry_callback: Any = None,
     switch_model_callback: Any = None,
     parent: QWidget | None = None,
@@ -366,9 +366,10 @@ class ThinkingIndicatorWidget(QFrame):
 
   def _animate_dots(self) -> None:
     self._step = (self._step + 1) % 4
-    dots = "." * (self._step + 1)
+    # Exatamente tres pontos: a frase ja termina em "..." e nunca acumula.
+    dots = "..."
     base = self._phrase or tr("MARK is thinking")
-    self.text_label.setText(f"{base}{dots}")
+    self.text_label.setText(f"{str(base).rstrip('. ')}{dots}")
 
   def start(self) -> None:
     self.show()

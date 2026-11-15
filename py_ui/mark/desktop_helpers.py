@@ -32,7 +32,15 @@ ICON_DIR = ROOT / "assets/icons/desktop"
 
 def _mark_icon(name: str) -> QIcon:
 
-    return QIcon(str(ICON_DIR / f"{name}.svg"))
+    path = ICON_DIR / f"{name}.svg"
+    if path.is_file():
+        icon = QIcon(str(path))
+        if not icon.isNull():
+            return icon
+    # Sem SVG no tema: desenha o icone vetorial com QPainter (nunca emoji).
+    from .ui.icons import vector_icon
+
+    return vector_icon(name)
 
 
 def _prepare_attachments(paths: list[Path]) -> list[dict]:

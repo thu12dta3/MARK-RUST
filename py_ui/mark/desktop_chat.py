@@ -275,7 +275,7 @@ class ChatMixin:
                 worker.cancel()
             except RuntimeError:
                 continue
-        self.busy = False
+        self.mark_mode_busy(False)
         try:
             if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
                 self.thinking_indicator.stop()
@@ -364,7 +364,7 @@ class ChatMixin:
                     return
             preflight_ctx["cloud_authorized"] = True
 
-        self.busy = True
+        self.mark_mode_busy(True)
         self.attach_button.setDisabled(True)
         self.conversation_selector.setEnabled(False)
         self.new_conversation_button.setEnabled(False)
@@ -528,7 +528,7 @@ class ChatMixin:
             return res.output
 
         def done(reply):
-            self.busy = False
+            self.mark_mode_busy(False)
             self.engineer_work_feedback.hide()
             if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
                 self.thinking_indicator.stop()
@@ -550,7 +550,7 @@ class ChatMixin:
             self.input.setFocus()
 
         def failed(message):
-            self.busy = False
+            self.mark_mode_busy(False)
             self.engineer_work_feedback.hide()
             if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
                 self.thinking_indicator.stop()
@@ -624,7 +624,7 @@ class ChatMixin:
         else:
             return (
                 "Falha no Processamento",
-                f"{tr('Não foi possível concluir a resposta:')} {clean_err}",
+                f"{tr('Could not complete the response:')} {clean_err}",
             )
 
     def _append_error_card(self, error_message: str, title: str = "Falha no Processamento", retry_callback=None, switch_model_callback=None, auto_scroll: bool = True):

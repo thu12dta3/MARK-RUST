@@ -88,15 +88,25 @@ pub fn w1a4_pack_block64(v: &[f32]) -> (f32, [u64; 4]) {
     if m_blk < 1e-8 {
         return (0.0, [0u64; 4]);
     }
-    let inv_m = 1.0 / m_blk;
+    // Mesma ordem aritmetica do motor de referencia validado:
+    // `q = round((v + m) * 15 / (2m))`, sem passar por `(v/m + 1)/2`.
+    let inv = 15.0f32 / (2.0f32 * m_blk);
     let mut planes = [0u64; 4];
     for (j, &val) in v.iter().enumerate() {
-        let norm01 = ((val * inv_m) + 1.0) * 0.5;
-        let q = (norm01 * 15.0).round().clamp(0.0, 15.0) as u64;
-        planes[0] |= (q & 1) << j;
-        planes[1] |= ((q >> 1) & 1) << j;
-        planes[2] |= ((q >> 2) & 1) << j;
-        planes[3] |= ((q >> 3) & 1) << j;
+        let q = ((val + m_blk) * inv).round().clamp(0.0, 15.0) as u64;
+        let bit = 1u64 << j;
+        if q & 1 != 0 {
+            planes[0] |= bit;
+        }
+        if q & 2 != 0 {
+            planes[1] |= bit;
+        }
+        if q & 4 != 0 {
+            planes[2] |= bit;
+        }
+        if q & 8 != 0 {
+            planes[3] |= bit;
+        }
     }
     (m_blk, planes)
 }

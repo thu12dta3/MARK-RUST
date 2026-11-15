@@ -539,6 +539,14 @@ class SettingsWidget(QWidget):
         self.inference_status_label.setWordWrap(True)
         layout.addWidget(self.inference_status_label)
 
+        self.engine_status_value = QLabel(tr("Engine: resolved automatically"))
+        self.engine_status_value.setObjectName("engineStatusValue")
+        self.engine_status_value.setWordWrap(True)
+        self.engine_status_value.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(self.engine_status_value)
+
         self.reload_inference_button = QPushButton(tr("Reload to apply the changes"))
         self.reload_inference_button.setObjectName("reloadInferenceButton")
         self.reload_inference_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1445,6 +1453,16 @@ class SettingsWidget(QWidget):
             self.auto_seed.set_auto(params.get("seed") is None)
         if hasattr(self, "toggle_flash_attn"):
             self.toggle_flash_attn.setChecked(bool(params.get("flash_attn", True)))
+
+    def set_resolved_engine(self, model_id: str, engine: str, label: str) -> None:
+        """Mostra o motor resolvido para o modelo atual (somente leitura)."""
+        if not hasattr(self, "engine_status_value"):
+            return
+        shown = label if model_id else tr("no model selected")
+        self.engine_status_value.setText(f"{tr('Engine')}: {shown}")
+        self.engine_status_value.setToolTip(
+            f"model={model_id or '-'} engine={engine} (resolvido automaticamente)"
+        )
 
     def reload_inference_engine(self) -> dict[str, Any]:
         """Collect, clamp, persist and apply the local inference parameters."""

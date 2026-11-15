@@ -269,6 +269,45 @@ pub fn device_memory_mib() -> Option<u64> {
     }
 }
 
+/// VRAM livre do dispositivo 0 em MiB, lida do driver CUDA.
+///
+/// Precisa do contexto primario corrente nesta thread, como qualquer chamada
+/// do Driver API.
+pub fn free_memory_mib() -> Option<u64> {
+    unsafe {
+        let handle = cuda_handle();
+        if handle.is_null() {
+            return None;
+        }
+        let cu_init: CuInitFn = sym!(handle, "cuInit", CuInitFn);
+        let cu_dev_get: CuDeviceGetFn = sym!(handle, "cuDeviceGet", CuDeviceGetFn);
+        let cu_ctx_retain: CuDevicePrimaryCtxRetainFn =
+            sym!(handle, "cuDevicePrimaryCtxRetain", CuDevicePrimaryCtxRetainFn);
+        let set_ctx: CuCtxSetCurrentFn = sym!(handle, "cuCtxSetCurrent", CuCtxSetCurrentFn);
+        let get_info: CuMemGetInfoFn = sym!(handle, "cuMemGetInfo_v2", CuMemGetInfoFn);
+        if cu_init(0) != 0 {
+            return None;
+        }
+        let mut dev: i32 = 0;
+        if cu_dev_get(&mut dev, 0) != 0 {
+            return None;
+        }
+        let mut ctx: *mut c_void = ptr::null_mut();
+        if cu_ctx_retain(&mut ctx, dev) != 0 || ctx.is_null() {
+            return None;
+        }
+        if set_ctx(ctx) != 0 {
+            return None;
+        }
+        let mut free: usize = 0;
+        let mut total: usize = 0;
+        if get_info(&mut free, &mut total) != 0 {
+            return None;
+        }
+        Some((free / (1024 * 1024)) as u64)
+    }
+}
+
 /// Compute capability (major, minor) do dispositivo 0.
 pub fn compute_capability() -> Option<(i32, i32)> {
     unsafe {
@@ -469,7 +508,7 @@ impl GpuEngine {
         d_mask: u64,
         m_rows: usize,
         k_cols: usize,
-    ) {
+    ) -> Result<()> {
         let mut p_w = w.ptr;
         let mut p_sc = sc.ptr;
         let mut p_x = d_in.ptr;
@@ -486,7 +525,7 @@ impl GpuEngine {
             &mut p_k as *mut u32 as *mut c_void,
             &mut p_m as *mut u32 as *mut c_void,
         ];
-        unsafe {
+        let rc = unsafe {
             (self.d.launch)(
                 self.d.f_i8 as *mut c_void,
                 (m_rows as u32).div_ceil(4),
@@ -499,8 +538,12 @@ impl GpuEngine {
                 ptr::null_mut(),
                 params.as_mut_ptr(),
                 ptr::null_mut(),
-            );
+            )
+        };
+        if rc != 0 {
+            bail!("cuLaunchKernel do matvec int8 falhou (codigo {rc}, m={m_rows}, k={k_cols})");
         }
+        Ok(())
     }
 
     /// Multiplicacao matriz-vetor int8 com mascara opcional (LM head).
@@ -524,7 +567,7 @@ impl GpuEngine {
         }
         self.htod_f32(&self.d_x, &x[..k_cols])?;
         let mask_ptr = mask.map(|m| m.ptr).unwrap_or(0);
-        self.launch_i8_raw(w, sc, &self.d_x, &self.d_y, mask_ptr, m_rows, k_cols);
+        self.launch_i8_raw(w, sc, &self.d_x, &self.d_y, mask_ptr, m_rows, k_cols)?;
         self.dtoh_f32(&self.d_y, &mut out[..m_rows])?;
         Ok(())
     }
@@ -544,8 +587,8 @@ impl GpuEngine {
     ) -> Result<()> {
         self.bind();
         self.htod_f32(&self.d_x, &x[..2048])?;
-        self.launch_i8_raw(q_w, q_sc, &self.d_x, &self.d_y, 0, 3072, 2048);
-        self.launch_i8_raw(kva_w, kva_sc, &self.d_x, &self.d_inter, 0, 576, 2048);
+        self.launch_i8_raw(q_w, q_sc, &self.d_x, &self.d_y, 0, 3072, 2048)?;
+        self.launch_i8_raw(kva_w, kva_sc, &self.d_x, &self.d_inter, 0, 576, 2048)?;
         self.dtoh_f32(&self.d_y, &mut q_out[..3072])?;
         self.dtoh_f32(&self.d_inter, &mut kva_out[..576])?;
         Ok(())
@@ -566,15 +609,15 @@ impl GpuEngine {
     ) -> Result<()> {
         self.bind();
         self.htod_f32(&self.d_x, &x[..2048])?;
-        self.launch_i8_raw(g_w, g_sc, &self.d_x, &self.d_y, 0, inter, 2048);
-        self.launch_i8_raw(u_w, u_sc, &self.d_x, &self.d_inter, 0, inter, 2048);
+        self.launch_i8_raw(g_w, g_sc, &self.d_x, &self.d_y, 0, inter, 2048)?;
+        self.launch_i8_raw(u_w, u_sc, &self.d_x, &self.d_inter, 0, inter, 2048)?;
         let (mut pg, mut pu, mut pn) = (self.d_y.ptr, self.d_inter.ptr, inter as u32);
         let mut params: [*mut c_void; 3] = [
             &mut pg as *mut u64 as *mut c_void,
             &mut pu as *mut u64 as *mut c_void,
             &mut pn as *mut u32 as *mut c_void,
         ];
-        unsafe {
+        let rc = unsafe {
             (self.d.launch)(
                 self.d.f_swiglu as *mut c_void,
                 (inter as u32).div_ceil(128),
@@ -587,9 +630,12 @@ impl GpuEngine {
                 ptr::null_mut(),
                 params.as_mut_ptr(),
                 ptr::null_mut(),
-            );
+            )
+        };
+        if rc != 0 {
+            bail!("cuLaunchKernel do SwiGLU falhou (codigo {rc}, inter={inter})");
         }
-        self.launch_i8_raw(d_w, d_sc, &self.d_y, &self.d_accum, 0, 2048, inter);
+        self.launch_i8_raw(d_w, d_sc, &self.d_y, &self.d_accum, 0, 2048, inter)?;
         Ok(())
     }
 
@@ -634,7 +680,7 @@ impl GpuEngine {
             &mut pout as *mut u64 as *mut c_void,
             &mut pm as *mut u32 as *mut c_void,
         ];
-        unsafe {
+        let rc = unsafe {
             (self.d.launch)(
                 self.d.f_gus as *mut c_void,
                 (inter as u32) / 4,
@@ -647,7 +693,10 @@ impl GpuEngine {
                 ptr::null_mut(),
                 gus.as_mut_ptr(),
                 ptr::null_mut(),
-            );
+            )
+        };
+        if rc != 0 {
+            bail!("cuLaunchKernel do expert gate/up falhou (codigo {rc})");
         }
         let d_q = ex.down_q4.ptr + (expert * hidden * 704) as u64;
         let d_s = ex.down_sc.ptr + (expert * hidden * 11 * 4) as u64;
@@ -667,7 +716,7 @@ impl GpuEngine {
             &mut pwk as *mut f32 as *mut c_void,
             &mut pdm as *mut u32 as *mut c_void,
         ];
-        unsafe {
+        let rc = unsafe {
             (self.d.launch)(
                 self.d.f_daw as *mut c_void,
                 (hidden as u32) / 4,
@@ -680,14 +729,21 @@ impl GpuEngine {
                 ptr::null_mut(),
                 daw.as_mut_ptr(),
                 ptr::null_mut(),
-            );
+            )
+        };
+        if rc != 0 {
+            bail!("cuLaunchKernel do expert down falhou (codigo {rc})");
         }
         Ok(())
     }
 
-    /// Camada linear W1A4 (LRD 1-bit) na GPU.
+    /// Camada linear W1A4 (1-bit) na GPU: FWHT de 64 colunas + planos de bits.
+    ///
+    /// `row_scale` deve conter `m_rows` escalas em FP16 (2 bytes por linha), que
+    /// e o formato nativo lido pelo kernel `rust_gpu_1bit_w1a4_matvec`
+    /// (`ld.global.u16` + `cvt.f32.f16`).
     #[allow(clippy::too_many_arguments)]
-    pub fn lrd_w1a4(
+    pub fn w1a4_matvec(
         &self,
         x: &[f32],
         col_scale: &[f32],
@@ -698,12 +754,34 @@ impl GpuEngine {
     ) -> Result<()> {
         self.bind();
         let in_dim = col_scale.len();
-        if in_dim % 64 != 0 {
-            bail!("lrd: dimensao de entrada precisa ser multiplo de 64");
+        if in_dim == 0 || in_dim % 64 != 0 {
+            bail!("w1a4: dimensao de entrada precisa ser multiplo de 64 (recebido {in_dim})");
+        }
+        if x.len() < in_dim {
+            bail!(
+                "w1a4: ativacao com {} elementos, esperado {in_dim}",
+                x.len()
+            );
+        }
+        if out.len() < m_rows {
+            bail!("w1a4: saida com {} elementos, esperado {m_rows}", out.len());
+        }
+        if row_scale.len() < m_rows * 2 {
+            bail!(
+                "w1a4: rscale com {} bytes, esperado {} (FP16 por linha)",
+                row_scale.len(),
+                m_rows * 2
+            );
         }
         let n_blocks = in_dim / 64;
+        if n_blocks * 8 > self.d_planes.len() || n_blocks * 4 > self.d_mblk.len() {
+            bail!(
+                "w1a4: {n_blocks} blocos de ativacao excedem os buffers temporarios da GPU"
+            );
+        }
+
         let mut x_buf = vec![0.0f32; in_dim];
-        for i in 0..x.len().min(in_dim) {
+        for i in 0..in_dim {
             x_buf[i] = x[i] * col_scale[i];
         }
         crate::kernels::fwht64_slice_inplace(&mut x_buf);
@@ -725,7 +803,7 @@ impl GpuEngine {
             )
         };
         if rc != 0 {
-            bail!("cuMemcpyHtoD das ativacoes W1A4 falhou");
+            bail!("cuMemcpyHtoD das ativacoes W1A4 falhou (codigo {rc})");
         }
         let mb_bytes =
             unsafe { std::slice::from_raw_parts(m_blks.as_ptr() as *const u8, m_blks.len() * 4) };
@@ -737,7 +815,7 @@ impl GpuEngine {
             )
         };
         if rc != 0 {
-            bail!("cuMemcpyHtoD das escalas W1A4 falhou");
+            bail!("cuMemcpyHtoD das escalas W1A4 falhou (codigo {rc})");
         }
 
         let (mut p_w, mut p_x, mut p_mb, mut p_rs, mut p_out) = (
@@ -758,10 +836,11 @@ impl GpuEngine {
             &mut p_nb as *mut u32 as *mut c_void,
             &mut p_mr as *mut u32 as *mut c_void,
         ];
-        unsafe {
+        // Um warp (32 lanes) por linha, 4 warps por bloco: a grade cobre 4 linhas.
+        let rc = unsafe {
             (self.d.launch)(
                 self.d.f_w1a4 as *mut c_void,
-                (m_rows as u32).div_ceil(128),
+                (m_rows as u32).div_ceil(4),
                 1,
                 1,
                 128,
@@ -771,10 +850,13 @@ impl GpuEngine {
                 ptr::null_mut(),
                 params.as_mut_ptr(),
                 ptr::null_mut(),
-            );
+            )
+        };
+        if rc != 0 {
+            bail!("cuLaunchKernel do W1A4 falhou (codigo {rc})");
         }
-        let take = m_rows.min(2048);
-        self.dtoh_f32(&self.d_y, &mut out[..take])?;
+        self.sync();
+        self.dtoh_f32(&self.d_y, &mut out[..m_rows])?;
         Ok(())
     }
 

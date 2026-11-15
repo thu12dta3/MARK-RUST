@@ -146,6 +146,25 @@ class LocalInferenceManager(QObject):
             self.fallback_triggered.emit(safe_fallback)
             return False, safe_fallback
 
+    def set_engine(self, engine: str, model_id: str) -> None:
+        """Registra o motor resolvido do modelo atual e persiste no config."""
+        self.active_engine = str(engine or "api")
+        self.active_model = str(model_id or "")
+        try:
+            from ..config import load_config, save_config
+
+            cfg = load_config() or {}
+            if cfg.get("engine") != self.active_engine:
+                cfg["engine"] = self.active_engine
+                save_config(cfg)
+        except (OSError, ValueError) as exc:
+            logger.warning("Nao foi possivel persistir o engine resolvido: %s", exc)
+        logger.info(
+            "engine sincronizado: %s para %s",
+            self.active_engine,
+            self.active_model or "-",
+        )
+
     def attach_settings_widget(self, settings_widget: Any) -> None:
         """Conecta o sinal reload_inference_engine_requested do SettingsWidget ao gerenciador."""
         self._attached_widget = settings_widget

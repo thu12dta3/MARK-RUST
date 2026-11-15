@@ -178,28 +178,28 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
             return header
 
         # --- SEGURANÇA E AGENTES ---
-        _add_category_header(self.tools_menu, "--- SEGURANÇA E AGENTES ---")
-        sentinel_action = self.tools_menu.addAction(_mark_icon("sentinel"), "Antivírus e ameaças · Sentinel")
+        _add_category_header(self.tools_menu, "--- SECURITY AND AGENTS ---")
+        sentinel_action = self.tools_menu.addAction(_mark_icon("sentinel"), "Antivirus and threats · Sentinel")
         sentinel_action.triggered.connect(self.open_sentinel)
-        mobile_action = self.tools_menu.addAction(_mark_icon("device"), "Dispositivos e segurança")
+        mobile_action = self.tools_menu.addAction(_mark_icon("device"), "Devices and security")
         mobile_action.triggered.connect(self.open_mobile_devices)
 
         # --- ENGENHARIA E CÓDIGO ---
-        _add_category_header(self.tools_menu, "--- ENGENHARIA E CÓDIGO ---")
-        missions_action = self.tools_menu.addAction(_mark_icon("github"), "Tarefas do Engineer")
+        _add_category_header(self.tools_menu, "--- ENGINEERING AND CODE ---")
+        missions_action = self.tools_menu.addAction(_mark_icon("github"), "Engineer tasks")
         missions_action.triggered.connect(self.open_missions)
-        sandbox_action = self.tools_menu.addAction(_mark_icon("github"), "Engenharia Autônoma · Sandbox")
+        sandbox_action = self.tools_menu.addAction(_mark_icon("github"), "Autonomous engineering · Sandbox")
         sandbox_action.triggered.connect(self.run_autonomous_engineering)
-        github_action = self.tools_menu.addAction(_mark_icon("github"), "Código · GitHub")
+        github_action = self.tools_menu.addAction(_mark_icon("github"), "Code · GitHub")
         github_action.triggered.connect(self.open_github)
 
         # --- UTILITÁRIOS E MÍDIA ---
         _add_category_header(self.tools_menu, "--- UTILITÁRIOS E MÍDIA ---")
-        agenda_action = self.tools_menu.addAction(_mark_icon("calendar"), "Agenda e lembretes")
+        agenda_action = self.tools_menu.addAction(_mark_icon("calendar"), "Calendar and reminders")
         agenda_action.triggered.connect(self.open_agenda)
         email_action = self.tools_menu.addAction(_mark_icon("mail"), "E-mail · Tuta")
         email_action.triggered.connect(self.open_email_composer)
-        self.voice_button = self.tools_menu.addAction(_mark_icon("microphone"), "Escuta por voz")
+        self.voice_button = self.tools_menu.addAction(_mark_icon("microphone"), "Voice listening")
         self.voice_button.triggered.connect(self.toggle_voice)
 
         # --- SISTEMA ---
@@ -208,7 +208,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         plugins_action.triggered.connect(self.open_plugins)
         self.connect_button = self.tools_menu.addAction(_mark_icon("power"), "Iniciar MARK")
         self.connect_button.triggered.connect(self.start_mark)
-        clear_action = self.tools_menu.addAction(_mark_icon("trash"), "Limpar conversa")
+        clear_action = self.tools_menu.addAction(_mark_icon("trash"), "Clear conversation")
         clear_action.triggered.connect(self.clear_memory)
         self.tools_button.setMenu(self.tools_menu)
         self.tools_button.hide()
@@ -800,7 +800,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
                 PRIMARY KEY(conversation_id,turn_id))""")
             now = int(time.time())
             db.execute("INSERT OR IGNORE INTO conversations VALUES('general-main','general','Geral',?,?)", (now, now))
-            for specialization, title in (("engineer", "Nova conversa"), ("professor", "Nova conversa")):
+            for specialization, title in (("engineer", "New chat"), ("professor", "New chat")):
                 exists = db.execute("SELECT 1 FROM conversations WHERE specialization=? LIMIT 1", (specialization,)).fetchone()
                 if not exists:
                     db.execute("INSERT INTO conversations VALUES(?,?,?,?,?)",

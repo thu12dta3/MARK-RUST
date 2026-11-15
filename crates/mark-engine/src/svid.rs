@@ -32,6 +32,10 @@ use crate::kernels::{
 };
 use crate::safetensors::{BinTokenizer, SafeTensors};
 
+pub mod onebit;
+
+use onebit::OneBitEngine;
+
 /// Dimensoes do enxerto DeepSeek-V2-Lite usado pelo Mark-Bin-32B.
 pub const HIDDEN: usize = 2048;
 /// Numero de camadas do enxerto.
@@ -117,15 +121,13 @@ struct LayerHost {
     experts_on_gpu: bool,
 }
 
-/// Motor carregado, pronto para inferencia.
-pub struct SvidEngine {
+/// Motor do layout V10 INT4 (64 experts em `isometric_mmap_experts.safetensors`).
+struct V10Engine {
     /// `isometric_gpu_core.safetensors` (mmap, zero-copy).
     st: Arc<SafeTensors>,
     /// `isometric_mmap_experts.safetensors` (mmap, zero-copy).
     st_exp: Arc<SafeTensors>,
     layers: Vec<LayerHost>,
-    tokenizer: BinTokenizer,
-    checkpoint_dir: PathBuf,
     embed_scale: Vec<f32>,
     lm_scale: Vec<f32>,
     cjk_mask: Vec<u8>,
@@ -175,12 +177,7 @@ pub struct GenerationState {
     v_cache: Vec<Vec<f32>>,
 }
 
-impl SvidEngine {
-    /// Localiza e carrega o checkpoint Mark-Bin-32B.
-    pub fn discover() -> Result<PathBuf> {
-        mark_core::paths::mark_bin_32b_checkpoint()
-            .context("checkpoint Mark-Bin-32B nao encontrado no volume externo")
-    }
+impl V10Engine {
 
     /// Carrega o motor a partir do diretorio do checkpoint.
     pub fn load(checkpoint_dir: &Path) -> Result<Self> {
@@ -257,8 +254,10 @@ impl SvidEngine {
         let lrd_down_row_scale = st_delta.f32_vec("lrd.30.d_rs")?;
         let lrd_down_col_scale =
             st_s4.f32_vec("model.layers.30.mlp.shared_experts.0.down_proj.col_scale")?;
-
-        let tokenizer = BinTokenizer::load(&tok_path)?;
+        // O kernel W1A4 le a escala de linha em FP16 cru, exatamente como o
+        // checkpoint (e o motor de referencia) a armazena.
+        let lrd_gate_row_scale_f16 = st_delta.raw("lrd.30.g_rs")?.to_vec();
+        let lrd_down_row_scale_f16 = st_delta.raw("lrd.30.d_rs")?.to_vec();
 
         let gpu = if std::env::var("MARK_FORCE_CPU").is_ok() {
             eprintln!("svid: MARK_FORCE_CPU definido, inferencia na CPU");
@@ -272,9 +271,9 @@ impl SvidEngine {
                 &lm_scale,
                 &cjk_mask,
                 &lrd_gate_bits,
-                &lrd_gate_row_scale,
+                &lrd_gate_row_scale_f16,
                 &lrd_down_bits,
-                &lrd_down_row_scale,
+                &lrd_down_row_scale_f16,
             ) {
                 Ok(state) => Some(state),
                 Err(error) => {
@@ -294,8 +293,6 @@ impl SvidEngine {
             st,
             st_exp,
             layers,
-            tokenizer,
-            checkpoint_dir: checkpoint_dir.to_path_buf(),
             embed_scale,
             lm_scale,
             cjk_mask,
@@ -312,65 +309,17 @@ impl SvidEngine {
         })
     }
 
-    /// Diretorio do checkpoint carregado.
-    pub fn checkpoint_dir(&self) -> &Path {
-        &self.checkpoint_dir
-    }
 
-    /// Tokenizador do checkpoint.
-    pub fn tokenizer(&self) -> &BinTokenizer {
-        &self.tokenizer
-    }
 
-    /// Janela de contexto maxima suportada pelo motor (2M do modelo H-MLA).
-    pub fn context_window(&self) -> u32 {
-        2_097_152
-    }
 
-    /// Cria um novo estado de geracao.
-    pub fn new_state(&self) -> GenerationState {
-        GenerationState {
-            ids: Vec::new(),
-            k_cache: vec![Vec::new(); N_LAYERS],
-            v_cache: vec![Vec::new(); N_LAYERS],
-        }
-    }
 
     /// Indica se o caminho GPU PTX esta ativo.
     pub fn gpu_active(&self) -> bool {
         self.gpu.is_some()
     }
 
-    /// Executa o prefill completo e devolve os logits da proxima posicao.
-    pub fn prefill_logits(&self, prompt_ids: &[u32], core_loops: u32) -> Result<Vec<f32>> {
-        if prompt_ids.is_empty() {
-            bail!("prompt vazio");
-        }
-        let mut state = self.new_state();
-        let last = prompt_ids.len() - 1;
-        let mut logits = Vec::new();
-        for (i, &tid) in prompt_ids.iter().enumerate() {
-            logits = self.forward(&mut state, tid, i, core_loops, i == last)?;
-        }
-        Ok(logits)
-    }
 
-    /// Processa um token num estado de geracao e devolve os logits da proxima posicao.
-    pub fn decode_step(
-        &self,
-        state: &mut GenerationState,
-        token_id: u32,
-        pos: usize,
-        core_loops: u32,
-    ) -> Result<Vec<f32>> {
-        self.forward(state, token_id, pos, core_loops, true)
-    }
 
-    /// Executa um unico forward pass e devolve os logits (usado em testes e diagnose).
-    pub fn forward_for_test(&self, token_id: u32, pos: usize, core_loops: u32) -> Result<Vec<f32>> {
-        let mut state = self.new_state();
-        self.forward(&mut state, token_id, pos, core_loops, true)
-    }
 
     /// Executa o forward pass para um token e devolve os logits.
     fn forward(
@@ -755,7 +704,7 @@ impl SvidEngine {
         for _ in 0..loops {
             match gpu_ref {
                 Some(g) => {
-                    g.engine.lrd_w1a4(
+                    g.engine.w1a4_matvec(
                         &h,
                         &self.lrd_gate_col_scale,
                         &g.lrd_gate_bits,
@@ -763,7 +712,7 @@ impl SvidEngine {
                         self.lrd_gate_row_scale.len(),
                         &mut lrd_g,
                     )?;
-                    g.engine.lrd_w1a4(
+                    g.engine.w1a4_matvec(
                         &lrd_g[0..HIDDEN],
                         &self.lrd_down_col_scale,
                         &g.lrd_down_bits,
@@ -859,6 +808,187 @@ impl SvidEngine {
         e_scores
     }
 
+}
+
+
+/// Motor de inferencia carregado: layout 1-bit de 32.054B (GPU-only) ou V10 INT4.
+pub struct SvidEngine {
+    inner: Inner,
+    tokenizer: BinTokenizer,
+    checkpoint_dir: PathBuf,
+    /// `false` desliga a mascara CJK (prompt escrito em idioma CJK).
+    cjk_suppression: AtomicBool,
+    /// Serializa forwards do caminho 1-bit (buffers temporarios compartilhados).
+    exec: Mutex<()>,
+}
+
+enum Inner {
+    /// Layout historico V10 INT4 (64 experts), com fallback de CPU.
+    V10(Box<V10Engine>),
+    /// Layout 1-bit de 32.054B (136 experts), 100% na VRAM.
+    OneBit(Box<OneBitEngine>),
+}
+
+impl SvidEngine {
+    /// Localiza e carrega o checkpoint Mark-Bin-32B.
+    pub fn discover() -> Result<PathBuf> {
+        mark_core::paths::mark_bin_32b_checkpoint()
+            .context("checkpoint Mark-Bin-32B nao encontrado no volume externo")
+    }
+
+    /// Carrega o motor a partir do diretorio do checkpoint.
+    ///
+    /// Quando os arquivos do layout 1-bit de 32.054B existem, esse caminho e o
+    /// padrao e roda 100% na GPU: qualquer falha de CUDA vira erro propagado,
+    /// nunca um fallback silencioso para a CPU.
+    pub fn load(checkpoint_dir: &Path) -> Result<Self> {
+        if let Some((core_dir, onebit_dir)) = onebit::discover_layout(Some(checkpoint_dir)) {
+            let engine = OneBitEngine::load(&core_dir, &onebit_dir).with_context(|| {
+                format!(
+                    "motor 1-bit GPU-only (core {}, experts {})",
+                    core_dir.display(),
+                    onebit_dir.display()
+                )
+            })?;
+            let tok_path = core_dir.join("rust_tokenizer_v10.bin");
+            if !tok_path.is_file() {
+                bail!("tokenizador ausente no layout 1-bit: {}", tok_path.display());
+            }
+            let tokenizer = BinTokenizer::load(&tok_path)?;
+            if tokenizer.len() != VOCAB {
+                bail!(
+                    "tokenizador com {} entradas, esperado {VOCAB}",
+                    tokenizer.len()
+                );
+            }
+            return Ok(Self {
+                inner: Inner::OneBit(Box::new(engine)),
+                tokenizer,
+                checkpoint_dir: core_dir,
+                cjk_suppression: AtomicBool::new(true),
+                exec: Mutex::new(()),
+            });
+        }
+        Self::load_v10(checkpoint_dir)
+    }
+
+    /// Carrega explicitamente o layout V10 INT4, ignorando o layout 1-bit.
+    ///
+    /// Existe para testes de regressao do layout antigo (64 experts int4):
+    /// `load` prefere o motor 1-bit de 32.054B quando ele esta no disco.
+    pub fn load_v10(checkpoint_dir: &Path) -> Result<Self> {
+        let v10 = V10Engine::load(checkpoint_dir)?;
+        let tok_path = checkpoint_dir.join("rust_tokenizer_v10.bin");
+        let tokenizer = BinTokenizer::load(&tok_path)?;
+        Ok(Self {
+            inner: Inner::V10(Box::new(v10)),
+            tokenizer,
+            checkpoint_dir: checkpoint_dir.to_path_buf(),
+            cjk_suppression: AtomicBool::new(true),
+            exec: Mutex::new(()),
+        })
+    }
+
+    /// Diretorio do checkpoint carregado.
+    pub fn checkpoint_dir(&self) -> &Path {
+        &self.checkpoint_dir
+    }
+
+    /// Tokenizador do checkpoint.
+    pub fn tokenizer(&self) -> &BinTokenizer {
+        &self.tokenizer
+    }
+
+    /// Janela de contexto maxima suportada pelo motor (2M do modelo H-MLA).
+    pub fn context_window(&self) -> u32 {
+        2_097_152
+    }
+
+    /// Cria um novo estado de geracao.
+    pub fn new_state(&self) -> GenerationState {
+        GenerationState {
+            ids: Vec::new(),
+            k_cache: vec![Vec::new(); N_LAYERS],
+            v_cache: vec![Vec::new(); N_LAYERS],
+        }
+    }
+
+    /// Indica se o caminho acelerado esta ativo (o layout 1-bit e GPU-only).
+    pub fn gpu_active(&self) -> bool {
+        match &self.inner {
+            Inner::V10(engine) => engine.gpu_active(),
+            Inner::OneBit(_) => true,
+        }
+    }
+
+    /// `true` quando o motor carregado e o layout 1-bit de 32.054B.
+    pub fn is_onebit(&self) -> bool {
+        matches!(self.inner, Inner::OneBit(_))
+    }
+
+    /// Acesso ao motor 1-bit, quando ele e o layout ativo.
+    pub fn onebit(&self) -> Option<&OneBitEngine> {
+        match &self.inner {
+            Inner::OneBit(engine) => Some(engine),
+            Inner::V10(_) => None,
+        }
+    }
+
+    /// Liga ou desliga a mascara CJK do LM head (prompt em idioma CJK nao leva mascara).
+    pub fn set_cjk_suppression(&self, enabled: bool) {
+        self.cjk_suppression.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Executa o prefill completo e devolve os logits da proxima posicao.
+    pub fn prefill_logits(&self, prompt_ids: &[u32], core_loops: u32) -> Result<Vec<f32>> {
+        if prompt_ids.is_empty() {
+            bail!("prompt vazio");
+        }
+        let mut state = self.new_state();
+        let last = prompt_ids.len() - 1;
+        let mut logits = Vec::new();
+        for (i, &tid) in prompt_ids.iter().enumerate() {
+            logits = self.forward(&mut state, tid, i, core_loops, i == last)?;
+        }
+        Ok(logits)
+    }
+
+    /// Processa um token num estado de geracao e devolve os logits da proxima posicao.
+    pub fn decode_step(
+        &self,
+        state: &mut GenerationState,
+        token_id: u32,
+        pos: usize,
+        core_loops: u32,
+    ) -> Result<Vec<f32>> {
+        self.forward(state, token_id, pos, core_loops, true)
+    }
+
+    /// Executa um unico forward pass e devolve os logits (usado em testes e diagnose).
+    pub fn forward_for_test(&self, token_id: u32, pos: usize, core_loops: u32) -> Result<Vec<f32>> {
+        let mut state = self.new_state();
+        self.forward(&mut state, token_id, pos, core_loops, true)
+    }
+
+    /// Executa um passo do forward no layout ativo.
+    fn forward(
+        &self,
+        state: &mut GenerationState,
+        token_id: u32,
+        pos: usize,
+        core_loops: u32,
+        is_last: bool,
+    ) -> Result<Vec<f32>> {
+        match &self.inner {
+            Inner::V10(engine) => engine.forward(state, token_id, pos, core_loops, is_last),
+            Inner::OneBit(engine) => {
+                let _guard = self.exec.lock().unwrap_or_else(|e| e.into_inner());
+                let apply_cjk = self.cjk_suppression.load(Ordering::Relaxed);
+                engine.forward(state, token_id, pos, is_last, apply_cjk)
+            }
+        }
+    }
+
     /// Gera tokens streaming. Cada token emitido corresponde a um forward pass real.
     ///
     /// O `cancel` permite interromper imediatamente a geracao.
@@ -898,6 +1028,9 @@ impl SvidEngine {
                     self.forward(&mut state, last_tok, pos, cfg.core_loops, true)?
                 }
             };
+            if logits.is_empty() {
+                bail!("motor nao devolveu logits para a proxima posicao");
+            }
             let next = sample(&logits, cfg, &mut rng);
             // Token de fim de sequencia nunca vira texto nem vai para o SSE:
             // a checagem acontece ANTES de emitir, nao depois.
@@ -1015,9 +1148,9 @@ fn build_gpu(
     host_lm_scale: &[f32],
     host_cjk_mask: &[u8],
     lrd_gate_bits: &[u64],
-    lrd_gate_row_scale: &[f32],
+    lrd_gate_row_scale_f16: &[u8],
     lrd_down_bits: &[u64],
-    lrd_down_row_scale: &[f32],
+    lrd_down_row_scale_f16: &[u8],
 ) -> Result<GpuState> {
     let engine = GpuEngine::create()?;
     let mut layers = Vec::with_capacity(N_LAYERS);
@@ -1067,9 +1200,9 @@ fn build_gpu(
     let lm_sc = engine.upload_f32(host_lm_scale)?;
     let cjk_mask = engine.upload_u8(host_cjk_mask)?;
     let lrd_gate = engine.upload_u64(lrd_gate_bits)?;
-    let lrd_gate_rs = engine.upload_f32(lrd_gate_row_scale)?;
+    let lrd_gate_rs = engine.upload_u8(lrd_gate_row_scale_f16)?;
     let lrd_down = engine.upload_u64(lrd_down_bits)?;
-    let lrd_down_rs = engine.upload_f32(lrd_down_row_scale)?;
+    let lrd_down_rs = engine.upload_u8(lrd_down_row_scale_f16)?;
     engine.sync();
     Ok(GpuState {
         engine,
@@ -1139,10 +1272,49 @@ mod tests {
             eprintln!("checkpoint ausente: teste ignorado");
             return;
         };
-        let engine = SvidEngine::load(&ckpt).expect("motor deve carregar o checkpoint real");
+        // O layout V10 mantem ~4.5 GB de experts int4 na VRAM.
+        let free_mib = crate::gpu::free_memory_mib().unwrap_or(0);
+        if free_mib < 5600 {
+            eprintln!("VRAM livre {free_mib} MiB (< 5600): teste do layout V10 ignorado");
+            return;
+        }
+        let engine = V10Engine::load(&ckpt).expect("motor deve carregar o checkpoint real");
         assert_eq!(engine.layers.len(), N_LAYERS);
+        assert!(
+            engine.gpu_active() || std::env::var("MARK_FORCE_CPU").is_ok(),
+            "layout V10 sem GPU e sem MARK_FORCE_CPU"
+        );
+    }
+
+    #[test]
+    fn automatic_engine_picks_the_1bit_layout_when_present() {
+        let Ok(ckpt) = SvidEngine::discover() else {
+            eprintln!("checkpoint ausente: teste ignorado");
+            return;
+        };
+        let Some((core, onebit_dir)) = onebit::discover_layout(Some(&ckpt)) else {
+            eprintln!("layout 1-bit ausente: teste ignorado");
+            return;
+        };
+        let free_mib = crate::gpu::free_memory_mib().unwrap_or(0);
+        if free_mib < onebit::VRAM_REQUIRED_MIB {
+            eprintln!(
+                "VRAM livre {free_mib} MiB (< {}): teste do motor 1-bit ignorado",
+                onebit::VRAM_REQUIRED_MIB
+            );
+            return;
+        }
+        let engine = SvidEngine::load(&ckpt).expect("motor deve carregar o checkpoint real");
+        assert!(engine.is_onebit(), "layout 1-bit deveria ser o padrao");
         assert_eq!(engine.tokenizer().len(), VOCAB, "vocabulario inesperado");
         assert_eq!(engine.context_window(), 2_097_152);
+        assert_eq!(engine.checkpoint_dir(), core.as_path());
+        let ob = engine.onebit().expect("motor 1-bit presente");
+        assert_eq!(ob.layer_count(), N_LAYERS);
+        assert_eq!(ob.expert_count(), onebit::N_EXPERTS_1BIT);
+        assert_eq!(ob.lrd_count(), onebit::LRD_LAYER_LAST - onebit::LRD_LAYER_FIRST);
+        assert!(ob.mapped_tensors() > 0, "nenhum tensor mapeado");
+        std::hint::black_box(onebit_dir);
     }
 
     #[test]

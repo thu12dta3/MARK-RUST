@@ -674,7 +674,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.api_status_label)
 
     self.api_status = self._status_row("MARK", "Verificando...")
-    self.voice_status = self._status_row("Microfone", "Pronto")
+    self.voice_status = self._status_row("Microfone", "Ready")
     sidebar_layout.addWidget(self.api_status)
     sidebar_layout.addWidget(self.voice_status)
 
@@ -767,21 +767,92 @@ class MainWindow(
     return text
 
   def resolve_engine_for_model(self, model_id: str) -> str:
-    """Engine implicita do modelo: o usuario nao escolhe engine manualmente."""
-    mid = str(model_id or "").lower()
-    if any(key in mid for key in ("mark-bin", "mkbin", "svid", "1-bit")):
-      return "rust"
-    if mid.endswith(".gguf"):
-      return "llamacpp"
-    if "/" in mid or ":" in mid:
-      return "ollama"
-    return "api"
+    """Engine implicita do modelo: o usuario nao escolhe engine manualmente.
+
+    A decisao vive em `mark.engine_router`, que e pura e testada; aqui so
+    coletamos as dicas que a interface ja tem (origem e caminho do scanner).
+    """
+    from ..engine_router import resolve_engine
+
+    source = None
+    path = None
+    if str(model_id or "").strip():
+      try:
+        from .model_scanner import scan_model
+
+        info = scan_model(str(model_id)) or {}
+        # `_scan_ollama` marca `source="ollama"` mesmo quando a tag nao existe:
+        # so aceitamos a origem quando o scanner de fato reconheceu o modelo.
+        if info.get("ok"):
+            source = info.get("source")
+        path = info.get("path")
+      except (OSError, ValueError, RuntimeError):
+        source = None
+        path = None
+    return resolve_engine(model_id, local_path=path, scanner_source=source)
+
+  def _prewarm_local_server(self) -> None:
+    """Sobe o mark-server em background logo apos o primeiro paint.
+
+    O processo e iniciado uma unica vez: alternar General/Engineer ou limpar a
+    conversa nunca reinicia nem mata o servidor.
+    """
+    if getattr(self, "_prewarm_started", False):
+      return
+    self._prewarm_started = True
+
+    def boot() -> dict:
+      try:
+        from ..rust_bridge import rust
+
+        status = rust.server_status() or {}
+        if status.get("running"):
+          return status
+        return rust.server_start(port=8931) or {}
+      except (OSError, RuntimeError, ValueError) as exc:
+        logger.warning("Pre-aquecimento do mark-server falhou: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+    import threading
+
+    threading.Thread(target=boot, name="mark-server-prewarm", daemon=True).start()
+
+  def _sync_engine_for_model(self, model_id: str | None = None) -> str:
+    """Sincroniza o motor resolvido em config, provider e Settings (read-only)."""
+    from ..engine_router import engine_label
+
+    if model_id is None:
+      selector = getattr(self, "model_selector", None)
+      if selector is not None:
+        try:
+          model_id = str(selector.current_model_id() or "")
+        except (AttributeError, RuntimeError):
+          model_id = ""
+    model_id = str(model_id or "")
+    engine = self.resolve_engine_for_model(model_id)
+    label = f"{engine_label(engine)}  ·  {model_id or 'sem modelo'}"
+    if engine != getattr(self, "active_engine", ""):
+      self._select_engine(engine, label, persist=True)
+    elif hasattr(self, "engine_button"):
+      self.engine_button.setText(label)
+    manager = getattr(self, "local_inference_manager", None)
+    if manager is not None and hasattr(manager, "set_engine"):
+      manager.set_engine(engine, model_id)
+    settings_widget = getattr(self, "settings_widget", None)
+    if settings_widget is not None and hasattr(settings_widget, "set_resolved_engine"):
+      settings_widget.set_resolved_engine(model_id, engine, label)
+    self._update_routing_target_badge()
+    return engine
 
   def _on_model_selected(self) -> None:
-    """Mark-Bin-32B implica o motor Rust; sem cascata de sinais."""
+    """Resolve e aplica o motor do modelo escolhido, sem cascata de sinais."""
     selector = getattr(self, "model_selector", None)
     if selector is None:
       return
+    try:
+      self._sync_engine_for_model()
+    except (RuntimeError, ValueError):
+      pass
     if str(selector.currentData() or "") != "mark":
       return
     if getattr(self, "active_engine", "rust") == "rust":
@@ -970,8 +1041,8 @@ class MainWindow(
           if eyebrow is not None:
               eyebrow.setText("VISION · MULTIMODAL")
       else:
-          title.setText(tr("O que vamos fazer hoje?"))
-          hint.setText(tr("Converse, planeje ou explore uma ideia com o MARK."))
+          title.setText(tr("What shall we do today?"))
+          hint.setText(tr("Chat, plan, or explore an idea with MARK."))
           if eyebrow is not None:
               eyebrow.setText("UM ASSISTENTE. TODOS OS SEUS DISPOSITIVOS.")
 
@@ -1112,8 +1183,8 @@ class MainWindow(
       ("professor_button", "professor", "Professor"),
       ("library_nav_button", "library", "Biblioteca"),
       ("evolution_nav_button", "evolution", "Evolução"),
-      ("call_nav_button", "call", "Chamada de Voz"),
-      ("devices_nav_button", "devices", "Dispositivos"),
+      ("call_nav_button", "call", "Voice Call"),
+      ("devices_nav_button", "devices", "Devices"),
       ("tools_button", "tools", "Ferramentas"),
       ("settings_nav_button", "settings", "Configurações"),
     )
@@ -1132,7 +1203,7 @@ class MainWindow(
   def _refresh_dynamic_labels(self) -> None:
     """Reaplica traducoes montadas fora do retranslate estatico."""
     if hasattr(self, "sidebar_new_chat_btn"):
-      self.sidebar_new_chat_btn.setText(tr("+ Nova conversa (Engineer)"))
+      self.sidebar_new_chat_btn.setText(tr("+  New chat (Engineer)"))
     if hasattr(self, "composer_hint"):
       self.composer_hint.setText(tr("Enter envia · Shift+Enter nova linha"))
     if hasattr(self, "connection_label") and not self.busy:
@@ -1141,7 +1212,7 @@ class MainWindow(
       self._update_routing_target_badge()
     if hasattr(self, "input"):
       self.input.setPlaceholderText(
-        tr("Escreva para o MARK ou arraste um arquivo aqui... (Shift+Enter nova linha)")
+        tr("Write to MARK or drop a file here... (Shift+Enter for a new line)")
       )
 
   def _ensure_local_mark_model(self) -> None:
@@ -1376,7 +1447,7 @@ class MainWindow(
     self.conversation_selector.hide()
     top.addWidget(self.conversation_selector)
 
-    self.new_conversation_button = QPushButton(tr("Nova conversa"), self.chat_page_host)
+    self.new_conversation_button = QPushButton(tr("New chat"), self.chat_page_host)
     self.new_conversation_button.setObjectName("headerAction")
     self.new_conversation_button.clicked.connect(self._create_specialized_conversation)
     self.new_conversation_button.hide()
@@ -1677,7 +1748,7 @@ class MainWindow(
     self.engine_button.setMenu(self.engine_menu)
     # Sem escolha manual de engine: o roteamento e automatico pelo modelo.
     self.engine_button.setVisible(False)
-    self.engine_button.setToolTip(tr("Engine escolhida automaticamente pelo modelo"))
+    self.engine_button.setToolTip(tr("Engine chosen automatically for the model"))
     _engine_labels = {
       "rust": "Rust 1-Bit Engine (mark-server)",
       "llamacpp": "llama.cpp (llama-server GGUF)",
@@ -1928,28 +1999,28 @@ class MainWindow(
       return header
 
     # --- SEGURANÇA E AGENTES ---
-    _add_category_header(self.tools_menu, "--- SEGURANÇA E AGENTES ---")
-    sentinel_action = self.tools_menu.addAction(_mark_icon("sentinel"), "Antivírus e ameaças · Sentinel")
+    _add_category_header(self.tools_menu, "--- SECURITY AND AGENTS ---")
+    sentinel_action = self.tools_menu.addAction(_mark_icon("sentinel"), "Antivirus and threats · Sentinel")
     sentinel_action.triggered.connect(self.open_sentinel)
-    mobile_action = self.tools_menu.addAction(_mark_icon("device"), "Dispositivos e segurança")
+    mobile_action = self.tools_menu.addAction(_mark_icon("device"), "Devices and security")
     mobile_action.triggered.connect(self.open_mobile_devices)
 
     # --- ENGENHARIA E CÓDIGO ---
-    _add_category_header(self.tools_menu, "--- ENGENHARIA E CÓDIGO ---")
-    missions_action = self.tools_menu.addAction(_mark_icon("github"), "Tarefas do Engineer")
+    _add_category_header(self.tools_menu, "--- ENGINEERING AND CODE ---")
+    missions_action = self.tools_menu.addAction(_mark_icon("github"), "Engineer tasks")
     missions_action.triggered.connect(self.open_missions)
-    sandbox_action = self.tools_menu.addAction(_mark_icon("github"), "Engenharia Autônoma · Sandbox")
+    sandbox_action = self.tools_menu.addAction(_mark_icon("github"), "Autonomous engineering · Sandbox")
     sandbox_action.triggered.connect(self.run_autonomous_engineering)
-    github_action = self.tools_menu.addAction(_mark_icon("github"), "Código · GitHub")
+    github_action = self.tools_menu.addAction(_mark_icon("github"), "Code · GitHub")
     github_action.triggered.connect(self.open_github)
 
     # --- UTILITÁRIOS E MÍDIA ---
     _add_category_header(self.tools_menu, "--- UTILITÁRIOS E MÍDIA ---")
-    agenda_action = self.tools_menu.addAction(_mark_icon("calendar"), "Agenda e lembretes")
+    agenda_action = self.tools_menu.addAction(_mark_icon("calendar"), "Calendar and reminders")
     agenda_action.triggered.connect(self.open_agenda)
     email_action = self.tools_menu.addAction(_mark_icon("mail"), "E-mail · Tuta")
     email_action.triggered.connect(self.open_email_composer)
-    self.voice_button = self.tools_menu.addAction(_mark_icon("microphone"), "Escuta por voz")
+    self.voice_button = self.tools_menu.addAction(_mark_icon("microphone"), "Voice listening")
     self.voice_button.triggered.connect(self.toggle_voice)
 
     # --- SISTEMA ---
@@ -1958,7 +2029,7 @@ class MainWindow(
     plugins_action.triggered.connect(self.open_plugins)
     self.connect_button = self.tools_menu.addAction(_mark_icon("power"), "Iniciar MARK")
     self.connect_button.triggered.connect(self.start_mark)
-    clear_action = self.tools_menu.addAction(_mark_icon("trash"), "Limpar conversa")
+    clear_action = self.tools_menu.addAction(_mark_icon("trash"), "Clear conversation")
     clear_action.triggered.connect(self.clear_memory)
 
     self.tools_button.setMenu(self.tools_menu)
@@ -2070,7 +2141,7 @@ class MainWindow(
       # O modo Geral é estritamente conversa única ('general-main'); remove duplicatas acidentais de 'general'
       db.execute("DELETE FROM conversation_messages WHERE conversation_id IN (SELECT id FROM conversations WHERE specialization='general' AND id != 'general-main')")
       db.execute("DELETE FROM conversations WHERE specialization='general' AND id != 'general-main'")
-      for specialization, title in (("engineer", "Nova conversa"), ("professor", "Nova conversa")):
+      for specialization, title in (("engineer", "New chat"), ("professor", "New chat")):
         exists = db.execute("SELECT 1 FROM conversations WHERE specialization=? LIMIT 1", (specialization,)).fetchone()
         if not exists:
           db.execute("INSERT INTO conversations VALUES(?,?,?,?,?)",
@@ -2115,7 +2186,6 @@ class MainWindow(
       try:
         rows = db.execute(
           "SELECT id, specialization, title, updated_at FROM conversations "
-          "WHERE (specialization != 'general' OR id = 'general-main') "
           "ORDER BY CASE WHEN id = 'general-main' THEN 0 ELSE 1 END, updated_at DESC, id LIMIT 40"
         ).fetchall()
       except sqlite3.OperationalError:
@@ -2134,8 +2204,8 @@ class MainWindow(
     )
     icon_map = {
       "general": _mark_icon("chat"),
-      "engineer": _mark_icon("github"),
-      "professor": _mark_icon("evolution"),
+      "engineer": _mark_icon("engineer"),
+      "professor": _mark_icon("professor"),
     }
     for conv_id, spec, title, _updated in rows:
       display_title = title or "Conversa"
@@ -2151,6 +2221,12 @@ class MainWindow(
         item.setSelected(True)
         self.sidebar_conv_list.setCurrentItem(item)
     self.sidebar_conv_list.blockSignals(False)
+    # "+ New chat" vale para General e Engineer: a visibilidade e recalculada em
+    # toda atualizacao da lista, nunca dependendo de uma troca de modo previa.
+    if getattr(self, "sidebar_new_chat_btn", None) is not None:
+      self.sidebar_new_chat_btn.setVisible(
+        getattr(self, "current_specialization", "general") in {"general", "engineer"}
+      )
 
   def _filter_sidebar_conversations(self, _text: str = "") -> None:
     self._refresh_sidebar_conversations()
@@ -2171,8 +2247,10 @@ class MainWindow(
       self.input.setFocus()
 
   def _create_new_conversation_from_sidebar(self) -> None:
-    """Cria uma nova conversa exclusivamente no modo Engineer."""
-    spec = "engineer"
+    """Cria uma nova conversa no modo ativo (General, Engineer ou Professor)."""
+    spec = getattr(self, "current_specialization", "general")
+    if spec not in {"general", "engineer", "professor"}:
+      spec = "general"
     conversation_id = uuid4().hex
     now = int(time.time())
     db = self._conversation_db()
@@ -2324,7 +2402,7 @@ class MainWindow(
   def _refresh_conversation_selector(self, select_id: str | None = None) -> None:
     super()._refresh_conversation_selector(select_id)
     if hasattr(self, "sidebar_new_chat_btn") and self.sidebar_new_chat_btn is not None:
-      self.sidebar_new_chat_btn.setVisible(self.current_specialization == "engineer")
+      self.sidebar_new_chat_btn.setVisible(self.current_specialization in {"general", "engineer"})
     if hasattr(self, "delete_conversation_button") and self.delete_conversation_button is not None:
       self.delete_conversation_button.setVisible(False)
     if self.current_specialization == "professor" and hasattr(self, "new_conversation_button"):
@@ -2512,7 +2590,7 @@ class MainWindow(
         self.connection_label.setText(
           tr("Conectado · memória compartilhada ativa")
           if states["reachable"]
-          else tr("Offline · inicie o serviço do MARK")
+          else tr("Offline · start the MARK service")
         )
 
     self._task(check, update)
@@ -2648,29 +2726,28 @@ class MainWindow(
     return self._sandbox_bridge
 
   def run_autonomous_engineering(self, task: str | None = None, target_file: str | None = None) -> None:
-    if not task:
-      task, ok = QInputDialog.getText(
-        self,
-        "Engenharia Autônoma · Sandbox",
-        "Descreva a tarefa de código para o EngineerAgent:",
-      )
-      if not ok or not task.strip():
-        return
-    if not target_file:
-      target_file, ok = QInputDialog.getText(
-        self,
-        "Engenharia Autônoma · Sandbox",
-        "Caminho relativo do arquivo alvo no workspace:",
-      )
-      if not ok or not target_file.strip():
-        return
-
+    """Consolida o modo Engineer; a tarefa vem do painel, sem QInputDialog."""
+    self.open_specialized_chat("engineer")
+    self.current_specialization = "engineer"
+    if not task or not str(task).strip():
+      if hasattr(self, "input"):
+        self.input.setFocus()
+      return
+    target = str(target_file or "").strip()
     bridge = self.sandbox_mcp()
+
+    if not target:
+      QMessageBox.information(
+        self,
+        tr("Autonomous engineering"),
+        tr("Select the target file in the Engineer panel before running the sandbox."),
+      )
+      return
 
     def execute():
       return bridge.execute_tool(
         "engineer_solve_task",
-        {"task": task.strip(), "target_file": target_file.strip()},
+        {"task": str(task).strip(), "target_file": target},
       )
 
     def done(payload):
@@ -2719,52 +2796,19 @@ class MainWindow(
     self._task(check, done, failed)
 
   def clear_memory(self) -> None:
-    phrase, accepted = QInputDialog.getText(
-      self,
-      "Apagar conversa",
-      "Esta ação apaga a conversa compartilhada em todos os dispositivos.\n\n"
-      "Para confirmar, digite MARK:",
-      QLineEdit.EchoMode.Password,
-    )
-    if not accepted or phrase != "MARK":
-      return
-    self.busy = True
-    self.send_button.setDisabled(True)
-
-    def clear():
-      active_model_id, provider_name = self._resolve_model_and_provider()
-      sys_prompt = self.get_system_prompt()
-      _, body = _request("/v1/chat/completions", {
-        "model": "mark",
-        "stream": False,
-        "system": sys_prompt,
-        "system_prompt": sys_prompt,
-        "active_model_id": active_model_id,
-        "provider_name": provider_name,
-        "messages": [
-          {"role": "system", "content": sys_prompt},
-          {"role": "user", "content": "limpa a memória"},
-        ],
-      })
-      return json.loads(body)["choices"][0]["message"]["content"]
-
-
-    def done(reply):
-      self.busy = False
-      self.send_button.setDisabled(False)
-      while self.chat_layout.count() > 1:
-        item = self.chat_layout.takeAt(0)
-        widget = item.widget()
-        if widget:
-          widget.deleteLater()
-      self._append_bubble(reply, "assistant")
-
-    def failed(message):
-      self.busy = False
-      self.send_button.setDisabled(False)
-      QMessageBox.warning(self, "MARK", "Não foi possível limpar a conversa.\n\n" + message)
-
-    self._task(clear, done, failed)
+    """Limpa a conversa ativa: 0 bolhas na tela e 0 mensagens no banco."""
+    conv_id = str(getattr(self, "current_conversation_id", "") or "")
+    if conv_id:
+      self._clear_conversation_messages(conv_id)
+    while self.chat_layout.count() > 1:
+      item = self.chat_layout.takeAt(0)
+      widget = item.widget()
+      if widget is not None:
+        widget.deleteLater()
+    if hasattr(self, "_update_mode_empty_state"):
+      self._update_mode_empty_state(getattr(self, "current_specialization", "general"))
+    self._refresh_sidebar_conversations()
+    self._refresh_busy_state()
 
   def _fallback_model_name(self) -> str:
     """Modelo secundario (fallback) do papel ativo, nunca o nome da engine."""

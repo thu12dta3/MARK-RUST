@@ -38,7 +38,13 @@ LANGUAGE_NAMES: dict[str, str] = {
 }
 DEFAULT_LANGUAGE = "en"
 SOURCE_ATTR = "_i18n_source"
-_EXTRA_MODULES: tuple[str, ...] = ("i18n_catalog", "i18n_vault", "i18n_models")
+_EXTRA_MODULES: tuple[str, ...] = (
+    "i18n_catalog",
+    "i18n_vault",
+    "i18n_models",
+    "i18n_ui",
+    "i18n_panels",
+)
 
 _current: str = DEFAULT_LANGUAGE
 _table: dict[str, tuple[str, ...]] = {}

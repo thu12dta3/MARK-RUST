@@ -2,6 +2,10 @@
 .target sm_75
 .address_size 64
 
+// W1A4 matvec: um warp de 32 lanes por linha do peso.
+// Cada lane acumula um subconjunto dos blocos de 64 colunas, a reducao e feita
+// com `shfl.sync.down.b32` e a escala da linha (`rscale`) e lida em FP16 com
+// `cvt.f32.f16`, exatamente como no motor de referencia validado.
 .visible .entry rust_gpu_1bit_w1a4_matvec(
     .param .u64 param_w,
     .param .u64 param_x,
@@ -12,94 +16,127 @@
     .param .u32 param_mrows
 )
 {
-    .reg .pred %p<3>;
-    .reg .b32 %r<16>;
-    .reg .b64 %rd<22>;
-    .reg .f32 %f<8>;
+    .reg .pred %p<4>;
+    .reg .b16 %rs<4>;
+    .reg .b32 %r<24>;
+    .reg .b64 %rd<24>;
+    .reg .f32 %f<12>;
+
+    mov.u32 %r1, %tid.x;
+    shr.u32 %r2, %r1, 5;
+    and.b32 %r3, %r1, 31;
+    mov.u32 %r4, %ctaid.x;
+    shl.b32 %r5, %r4, 2;
+    add.u32 %r6, %r5, %r2;
+
+    ld.param.u32 %r7, [param_mrows];
+    setp.ge.u32 %p1, %r6, %r7;
+    @%p1 bra DONE1;
 
     ld.param.u64 %rd1, [param_w];
     ld.param.u64 %rd2, [param_x];
     ld.param.u64 %rd3, [param_mblk];
     ld.param.u64 %rd4, [param_rscale];
     ld.param.u64 %rd5, [param_out];
-    ld.param.u32 %r1, [param_nblocks];
-    ld.param.u32 %r2, [param_mrows];
+    ld.param.u32 %r8, [param_nblocks];
 
-    mov.u32 %r3, %ctaid.x;
-    mov.u32 %r4, %ntid.x;
-    mov.u32 %r5, %tid.x;
-    mad.lo.u32 %r6, %r3, %r4, %r5;
-    setp.ge.u32 %p1, %r6, %r2;
-    @%p1 bra DONE;
-
-    mul.lo.u32 %r7, %r6, %r1;
-    mul.wide.u32 %rd6, %r7, 8;
+    mul.wide.u32 %rd6, %r6, %r8;
+    shl.b64 %rd6, %rd6, 3;
     add.u64 %rd7, %rd1, %rd6;
 
     mov.f32 %f1, 0f00000000;
-    mov.u32 %r8, 0;
+    mov.u32 %r9, %r3;
+LOOP1:
+    setp.ge.u32 %p2, %r9, %r8;
+    @%p2 bra RED1;
 
-LOOP_B:
-    setp.ge.u32 %p2, %r8, %r1;
-    @%p2 bra END_LOOP;
+    cvt.u64.u32 %rd8, %r9;
+    shl.b64 %rd9, %rd8, 3;
+    add.u64 %rd10, %rd7, %rd9;
+    ld.global.u64 %rd11, [%rd10];
 
-    mul.wide.u32 %rd8, %r8, 8;
-    add.u64 %rd9, %rd7, %rd8;
-    ld.global.u64 %rd10, [%rd9];
+    shl.b64 %rd12, %rd8, 5;
+    add.u64 %rd13, %rd2, %rd12;
 
-    mul.wide.u32 %rd11, %r8, 32;
-    add.u64 %rd12, %rd2, %rd11;
-    ld.global.u64 %rd13, [%rd12];
-    ld.global.u64 %rd14, [%rd12 + 8];
-    ld.global.u64 %rd15, [%rd12 + 16];
-    ld.global.u64 %rd16, [%rd12 + 24];
+    ld.global.u64 %rd14, [%rd13];
+    xor.b64 %rd15, %rd11, %rd14;
+    not.b64 %rd15, %rd15;
+    popc.b64 %r10, %rd15;
 
-    xor.b64 %rd13, %rd10, %rd13;
-    not.b64 %rd13, %rd13;
-    popc.b64 %r9, %rd13;
-
-    xor.b64 %rd14, %rd10, %rd14;
-    not.b64 %rd14, %rd14;
-    popc.b64 %r10, %rd14;
-
-    xor.b64 %rd15, %rd10, %rd15;
+    ld.global.u64 %rd14, [%rd13 + 8];
+    xor.b64 %rd15, %rd11, %rd14;
     not.b64 %rd15, %rd15;
     popc.b64 %r11, %rd15;
+    shl.b32 %r11, %r11, 1;
+    add.u32 %r10, %r10, %r11;
 
-    xor.b64 %rd16, %rd10, %rd16;
-    not.b64 %rd16, %rd16;
-    popc.b64 %r12, %rd16;
+    ld.global.u64 %rd14, [%rd13 + 16];
+    xor.b64 %rd15, %rd11, %rd14;
+    not.b64 %rd15, %rd15;
+    popc.b64 %r11, %rd15;
+    shl.b32 %r11, %r11, 2;
+    add.u32 %r10, %r10, %r11;
+
+    ld.global.u64 %rd14, [%rd13 + 24];
+    xor.b64 %rd15, %rd11, %rd14;
+    not.b64 %rd15, %rd15;
+    popc.b64 %r11, %rd15;
+    shl.b32 %r11, %r11, 3;
+    add.u32 %r10, %r10, %r11;
 
     shl.b32 %r10, %r10, 1;
-    shl.b32 %r11, %r11, 2;
-    shl.b32 %r12, %r12, 3;
-    add.s32 %r13, %r9, %r10;
-    add.s32 %r13, %r13, %r11;
-    add.s32 %r13, %r13, %r12;
-    shl.b32 %r13, %r13, 1;
-    sub.s32 %r13, %r13, 960;
+    sub.s32 %r12, %r10, 960;
+    cvt.rn.f32.s32 %f2, %r12;
 
-    cvt.rn.f32.s32 %f2, %r13;
-
-    mul.wide.u32 %rd17, %r8, 4;
-    add.u64 %rd18, %rd3, %rd17;
-    ld.global.f32 %f3, [%rd18];
-
+    shl.b64 %rd16, %rd8, 2;
+    add.u64 %rd17, %rd3, %rd16;
+    ld.global.f32 %f3, [%rd17];
     mul.f32 %f4, %f3, 0f3D888889;
     fma.rn.f32 %f1, %f2, %f4, %f1;
 
-    add.u32 %r8, %r8, 1;
-    bra LOOP_B;
+    add.u32 %r9, %r9, 32;
+    bra LOOP1;
 
-END_LOOP:
-    mul.wide.u32 %rd19, %r6, 4;
+RED1:
+    mov.b32 %r13, %f1;
+    shfl.sync.down.b32 %r14, %r13, 16, 31, 0xffffffff;
+    mov.b32 %f5, %r14;
+    add.f32 %f1, %f1, %f5;
+
+    mov.b32 %r13, %f1;
+    shfl.sync.down.b32 %r14, %r13, 8, 31, 0xffffffff;
+    mov.b32 %f5, %r14;
+    add.f32 %f1, %f1, %f5;
+
+    mov.b32 %r13, %f1;
+    shfl.sync.down.b32 %r14, %r13, 4, 31, 0xffffffff;
+    mov.b32 %f5, %r14;
+    add.f32 %f1, %f1, %f5;
+
+    mov.b32 %r13, %f1;
+    shfl.sync.down.b32 %r14, %r13, 2, 31, 0xffffffff;
+    mov.b32 %f5, %r14;
+    add.f32 %f1, %f1, %f5;
+
+    mov.b32 %r13, %f1;
+    shfl.sync.down.b32 %r14, %r13, 1, 31, 0xffffffff;
+    mov.b32 %f5, %r14;
+    add.f32 %f1, %f1, %f5;
+
+    setp.ne.u32 %p3, %r3, 0;
+    @%p3 bra DONE1;
+
+    cvt.u64.u32 %rd18, %r6;
+    shl.b64 %rd19, %rd18, 1;
     add.u64 %rd20, %rd4, %rd19;
-    ld.global.f32 %f5, [%rd20];
-    mul.f32 %f1, %f1, %f5;
+    ld.global.u16 %rs1, [%rd20];
+    cvt.f32.f16 %f6, %rs1;
+    mul.f32 %f7, %f1, %f6;
 
-    add.u64 %rd21, %rd5, %rd19;
-    st.global.f32 [%rd21], %f1;
+    shl.b64 %rd21, %rd18, 2;
+    add.u64 %rd22, %rd5, %rd21;
+    st.global.f32 [%rd22], %f7;
 
-DONE:
+DONE1:
     ret;
 }

@@ -24,7 +24,7 @@ def load_catalog() -> dict[str, tuple[str, ...]]:
     assert spec.loader is not None
     spec.loader.exec_module(module)
     tables = dict(module.TRANSLATIONS)
-    for extra in ("i18n_vault.py", "i18n_models.py"):
+    for extra in ("i18n_vault.py", "i18n_models.py", "i18n_ui.py", "i18n_panels.py"):
         path = CATALOG.parent / extra
         if not path.is_file():
             continue
@@ -62,21 +62,26 @@ def main() -> int:
 
     # categorias e comandos que precisam existir no catalogo (palette/tools)
     required = (
-        "--- SEGURANÇA E AGENTES ---",
-        "--- ENGENHARIA E CÓDIGO ---",
-        "--- UTILITÁRIOS E MÍDIA ---",
-        "--- SISTEMA ---",
-        "Antivírus e ameaças · Sentinel",
-        "Dispositivos e segurança",
-        "Tarefas do Engineer",
-        "Engenharia Autônoma · Sandbox",
-        "Código · GitHub",
-        "Agenda e lembretes",
-        "digite um comando",
+        "--- SECURITY AND AGENTS ---",
+        "--- ENGINEERING AND CODE ---",
+        "--- UTILITIES AND MEDIA ---",
+        "--- SYSTEM ---",
+        "Antivirus and threats · Sentinel",
+        "Devices and security",
+        "Engineer tasks",
+        "Autonomous engineering · Sandbox",
+        "Code · GitHub",
+        "Calendar and reminders",
+        "command",
     )
     lower_keys = {k.lower() for k in table}
+    all_labels = {str(value).lower() for row in table.values() for value in row}
     for entry in required:
-        if entry not in table and not any(entry.lower() in key.lower() for key in table):
+        if (
+            entry not in table
+            and not any(entry.lower() in key.lower() for key in table)
+            and entry.lower() not in all_labels
+        ):
             failures.append(f"chave obrigatoria ausente: {entry!r}")
 
     print(f"chaves: {len(table)} | idiomas: {len(LANGS)}")

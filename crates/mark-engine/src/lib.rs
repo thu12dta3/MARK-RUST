@@ -109,6 +109,11 @@ pub async fn generate_streaming(
 
     match engine {
         Engine::Svid { engine, config } => {
+            // A mascara CJK do checkpoint so vale para prompts que NAO estao em
+            // idioma CJK: pedir chines/coreano/japones nunca deve ser mascarado.
+            let probe = format!("{}
+{}", ctx.system.clone().unwrap_or_default(), prompt);
+            engine.set_cjk_suppression(!prompt_has_cjk(&probe));
             // O motor nativo roda em thread dedicada (CPU-bound, nao async).
             let tx2 = tx.clone();
             let cancel2 = cancel.clone();
@@ -284,6 +289,17 @@ pub async fn generate_streaming(
             Ok(())
         }
     }
+}
+
+/// `true` quando o texto tem caracteres CJK (han, hangul, kana, fullwidth).
+fn prompt_has_cjk(text: &str) -> bool {
+    text.chars().any(|c| {
+        let u = c as u32;
+        (0x2E80..=0x9FFF).contains(&u)
+            || (0xAC00..=0xD7AF).contains(&u)
+            || (0xF900..=0xFAFF).contains(&u)
+            || (0xFF00..=0xFFEF).contains(&u)
+    })
 }
 
 /// Constroi o motor para uma entrada de catalogo.

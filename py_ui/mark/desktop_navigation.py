@@ -273,6 +273,47 @@ class NavigationMixin:
         self.open_specialized_chat("engineer")
         self._prefill_message(prompt)
 
+    def _mode_busy_set(self) -> set:
+        """Modos com requisicao em andamento (busy isolado por modo)."""
+        modes = getattr(self, "_busy_modes", None)
+        if modes is None:
+            modes = set()
+            self._busy_modes = modes
+        return modes
+
+    def mark_mode_busy(self, busy: bool, spec: str | None = None) -> None:
+        """Marca/limpa o busy do modo que disparou a requisicao.
+
+        A conclusao limpa o conjunto inteiro porque o aplicativo mantem uma
+        unica requisicao de chat em voo; assim nenhum modo herda um busy orfao.
+        """
+        modes = self._mode_busy_set()
+        target = spec or getattr(self, "current_specialization", "general")
+        if busy:
+            modes.add(target)
+        else:
+            modes.clear()
+        self._refresh_busy_state()
+
+    def _refresh_busy_state(self) -> None:
+        """Recalcula o busy do modo ATUAL (nunca o de outro modo)."""
+        current = getattr(self, "current_specialization", "general")
+        active = current in self._mode_busy_set()
+        self.busy = active
+        if hasattr(self, "send_button") and self.send_button is not None:
+            self.send_button.setDisabled(active)
+        indicator = getattr(self, "thinking_indicator", None)
+        if indicator is not None:
+            if active:
+                indicator.start()
+            else:
+                indicator.stop()
+        if active:
+            if hasattr(self, "_start_thinking_rotator"):
+                self._start_thinking_rotator()
+        elif hasattr(self, "_stop_thinking_rotator"):
+            self._stop_thinking_rotator()
+
     def open_specialized_chat(self, specialization: str):
         if specialization not in {"general", "engineer", "professor", "vision"}:
             raise ValueError("Área de conversa desconhecida")
@@ -280,6 +321,8 @@ class NavigationMixin:
             self.specialization_conversations[self.current_specialization] = self.current_conversation_id
         self.current_specialization = specialization
         self._set_active_area(specialization)
+        # O busy pertence ao modo que enviou: ao trocar de modo ele e recalculado.
+        self._refresh_busy_state()
         if hasattr(self, "engineer_bar"):
             empty_state = getattr(self, "empty_state", None)
             try:

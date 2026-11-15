@@ -50,6 +50,10 @@ def main() -> int:
     window = MainWindow()
     window.resize(1280, 850)
     window.show()
+    # Primeiro paint concluido: o servidor local sobe em background uma vez.
+    from PyQt6.QtCore import QTimer
+
+    QTimer.singleShot(1200, window._prewarm_local_server)
     install_qt_message_handler()
     install_guards(app, on_error=lambda message: show_error_toast(window, message))
     if hasattr(window, "shutdown"):

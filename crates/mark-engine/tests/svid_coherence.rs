@@ -28,7 +28,17 @@ fn greedy_generation_matches_reference_motor() {
         eprintln!("checkpoint Mark-Bin-32B ausente: teste ignorado");
         return;
     };
-    let engine = SvidEngine::load(&ckpt).expect("motor deve carregar o checkpoint real");
+    // O texto de referencia abaixo foi produzido pelo layout V10 INT4: o
+    // layout 1-bit de 32.054B tem outro motor (ver `svid_parity`).
+    // O layout V10 mantem ~4.5 GB de experts int4 na VRAM; sem espaco o motor
+    // cai para a CPU e o texto de referencia deixa de ser reproduzivel.
+    let free_mib = mark_engine::gpu::free_memory_mib().unwrap_or(0);
+    if free_mib < 5600 {
+        eprintln!("VRAM livre {free_mib} MiB (< 5600): teste do layout V10 ignorado");
+        return;
+    }
+    let engine = SvidEngine::load_v10(&ckpt)
+        .expect("motor V10 deve carregar o checkpoint real");
     let tok = engine.tokenizer();
 
     assert_eq!(
@@ -75,6 +85,13 @@ fn freeform_prompt_produces_text() {
         eprintln!("checkpoint Mark-Bin-32B ausente: teste ignorado");
         return;
     };
+    if !onebit_vram_ready() {
+        eprintln!(
+            "VRAM livre insuficiente (< {} MiB): teste do motor 1-bit ignorado",
+            mark_engine::svid::onebit::VRAM_REQUIRED_MIB
+        );
+        return;
+    }
     let engine = SvidEngine::load(&ckpt).expect("motor deve carregar");
     let ids = engine
         .tokenizer()
@@ -100,4 +117,13 @@ fn freeform_prompt_produces_text() {
         text.chars().any(|c| c.is_alphanumeric()),
         "saida sem conteudo alfanumerico: {text:?}"
     );
+}
+
+/// O motor 1-bit de 32.054B exige ~6 GiB livres de VRAM; sem isso o teste nao
+/// tem como rodar e o motivo e reportado em vez de mascarado.
+fn onebit_vram_ready() -> bool {
+    match mark_engine::gpu::free_memory_mib() {
+        Some(mib) => mib >= mark_engine::svid::onebit::VRAM_REQUIRED_MIB,
+        None => false,
+    }
 }

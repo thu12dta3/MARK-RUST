@@ -26,6 +26,13 @@ fn real_checkpoint_loads_and_forward_is_not_degenerate() {
         eprintln!("checkpoint Mark-Bin-32B ausente: teste ignorado");
         return;
     };
+    if !onebit_vram_ready() {
+        eprintln!(
+            "VRAM livre insuficiente (< {} MiB): teste do motor 1-bit ignorado",
+            mark_engine::svid::onebit::VRAM_REQUIRED_MIB
+        );
+        return;
+    }
     let engine = SvidEngine::load(&ckpt).expect("motor deve carregar");
 
     // O tokenizador real tem 102400 entradas.
@@ -67,6 +74,13 @@ fn real_generation_emits_distinct_tokens_and_stops_on_cancel() {
         eprintln!("checkpoint Mark-Bin-32B ausente: teste ignorado");
         return;
     };
+    if !onebit_vram_ready() {
+        eprintln!(
+            "VRAM livre insuficiente (< {} MiB): teste do motor 1-bit ignorado",
+            mark_engine::svid::onebit::VRAM_REQUIRED_MIB
+        );
+        return;
+    }
     let engine = SvidEngine::load(&ckpt).expect("motor deve carregar");
 
     let cfg = EngineConfig {
@@ -123,6 +137,13 @@ fn generation_is_deterministic_with_fixed_seed() {
         eprintln!("checkpoint Mark-Bin-32B ausente: teste ignorado");
         return;
     };
+    if !onebit_vram_ready() {
+        eprintln!(
+            "VRAM livre insuficiente (< {} MiB): teste do motor 1-bit ignorado",
+            mark_engine::svid::onebit::VRAM_REQUIRED_MIB
+        );
+        return;
+    }
     let engine = SvidEngine::load(&ckpt).expect("motor deve carregar");
     let cfg = EngineConfig {
         temperature: 0.2,
@@ -155,4 +176,13 @@ fn generation_is_deterministic_with_fixed_seed() {
     let b = run();
     assert_eq!(a, b, "mesma seed deve produzir os mesmos tokens");
     assert!(!a.is_empty());
+}
+
+/// O motor 1-bit de 32.054B exige ~6 GiB livres de VRAM; sem isso o teste nao
+/// tem como rodar e o motivo e reportado em vez de mascarado.
+fn onebit_vram_ready() -> bool {
+    match mark_engine::gpu::free_memory_mib() {
+        Some(mib) => mib >= mark_engine::svid::onebit::VRAM_REQUIRED_MIB,
+        None => false,
+    }
 }

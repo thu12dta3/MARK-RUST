@@ -1066,22 +1066,14 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         return self._sandbox_bridge
 
     def run_autonomous_engineering(self, task: str | None = None, target_file: str | None = None):
+        # Sem modal: o sandbox bwrap ja roda dentro do chat do Engineer. O item de
+        # menu/Command Palette apenas ativa o modo Engineer.
         if not task:
-            task, ok = QInputDialog.getText(
-                self,
-                "Engenharia Autônoma · Sandbox",
-                "Descreva a tarefa de código para o EngineerAgent:",
-            )
-            if not ok or not task.strip():
-                return
+            self.open_specialized_chat("engineer")
+            return
         if not target_file:
-            target_file, ok = QInputDialog.getText(
-                self,
-                "Engenharia Autônoma · Sandbox",
-                "Caminho relativo do arquivo alvo no workspace:",
-            )
-            if not ok or not target_file.strip():
-                return
+            self.open_specialized_chat("engineer")
+            return
 
         bridge = self.sandbox_mcp()
 

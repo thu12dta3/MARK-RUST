@@ -766,6 +766,17 @@ class MainWindow(
         text = text.replace(fragment, tr(key))
     return text
 
+  def resolve_engine_for_model(self, model_id: str) -> str:
+    """Engine implicita do modelo: o usuario nao escolhe engine manualmente."""
+    mid = str(model_id or "").lower()
+    if any(key in mid for key in ("mark-bin", "mkbin", "svid", "1-bit")):
+      return "rust"
+    if mid.endswith(".gguf"):
+      return "llamacpp"
+    if "/" in mid or ":" in mid:
+      return "ollama"
+    return "api"
+
   def _on_model_selected(self) -> None:
     """Mark-Bin-32B implica o motor Rust; sem cascata de sinais."""
     selector = getattr(self, "model_selector", None)
@@ -1664,6 +1675,9 @@ class MainWindow(
       action.triggered.connect(lambda _checked=False, k=key, l=label: self._select_engine(k, l))
       self._engine_actions[key] = action
     self.engine_button.setMenu(self.engine_menu)
+    # Sem escolha manual de engine: o roteamento e automatico pelo modelo.
+    self.engine_button.setVisible(False)
+    self.engine_button.setToolTip(tr("Engine escolhida automaticamente pelo modelo"))
     _engine_labels = {
       "rust": "Rust 1-Bit Engine (mark-server)",
       "llamacpp": "llama.cpp (llama-server GGUF)",
@@ -2043,6 +2057,14 @@ class MainWindow(
       db.execute("""CREATE TABLE IF NOT EXISTS imported_remote_turns (
         conversation_id TEXT NOT NULL, turn_id INTEGER NOT NULL, source TEXT NOT NULL,
         PRIMARY KEY(conversation_id,turn_id))""")
+      # Migracao: bancos antigos tinham imported_remote_turns sem conversation_id,
+      # o que fazia o INSERT abaixo estourar e derrubar o boot do app.
+      imported_cols = {row[1] for row in db.execute("PRAGMA table_info(imported_remote_turns)").fetchall()}
+      if "conversation_id" not in imported_cols:
+        db.execute("DROP TABLE imported_remote_turns")
+        db.execute("""CREATE TABLE imported_remote_turns (
+          conversation_id TEXT NOT NULL, turn_id INTEGER NOT NULL, source TEXT NOT NULL,
+          PRIMARY KEY(conversation_id,turn_id))""")
       now = int(time.time())
       db.execute("INSERT OR IGNORE INTO conversations VALUES('general-main','general','Geral',?,?)", (now, now))
       # O modo Geral é estritamente conversa única ('general-main'); remove duplicatas acidentais de 'general'
@@ -2056,8 +2078,13 @@ class MainWindow(
       general_count = db.execute(
         "SELECT COUNT(*) FROM conversation_messages WHERE conversation_id='general-main'"
       ).fetchone()[0]
+      # O ledger sobrevive ao Clear conversation: sem esta checagem o historico
+      # legado era reimportado no boot seguinte e as mensagens "voltavam".
+      already_imported = db.execute(
+        "SELECT COUNT(*) FROM imported_remote_turns WHERE conversation_id='general-main'"
+      ).fetchone()[0]
       memory_file = Path(getattr(self, "_memory_file", MEMORY_FILE))
-      if not general_count and memory_file.exists():
+      if not general_count and not already_imported and memory_file.exists():
         info = memory_file.lstat()
         if stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and not info.st_mode & 0o077:
           legacy = sqlite3.connect(f"file:{memory_file}?mode=ro", uri=True, timeout=0.2)
@@ -2267,7 +2294,9 @@ class MainWindow(
         (spec,),
       ).fetchone()
       fallback_id = remaining[0] if remaining else None
-      if fallback_id is None and spec in {"engineer", "professor"}:
+      # Qualquer modo (inclusive General) precisa terminar com uma conversa que
+      # exista de fato: apontar para um id inexistente quebrava o envio seguinte.
+      if fallback_id is None:
         fallback_id = uuid4().hex
         now = int(time.time())
         db.execute(
@@ -2278,11 +2307,13 @@ class MainWindow(
     finally:
       db.close()
 
-    if spec in {"engineer", "professor"} and fallback_id:
+    if fallback_id:
       if self.specialization_conversations.get(spec) == conv_id:
         self.specialization_conversations[spec] = fallback_id
     if self.current_conversation_id == conv_id:
       self.current_conversation_id = fallback_id or "general-main"
+      # Estado limpo: nenhuma geracao pendente sobre conversa que nao existe mais.
+      self.busy = False
       self._refresh_conversation_selector(self.current_conversation_id)
       self._load_active_conversation()
     else:

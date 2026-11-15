@@ -234,6 +234,40 @@ class ChatMixin:
         messages.append({"role": "user", "content": [{"type": "text", "text": latest}]})
         return messages[-31:]
 
+    def _set_send_state(self) -> None:
+        """Estado Send: seta escura nitida sobre o botao ciano (#00D8F6).
+
+        A restauracao usava `_mark_icon("send")`, cujo traco e da cor IDLE clara
+        e desaparecia sobre o ciano. Aqui o icone e o mesmo da construcao.
+        """
+        from PyQt6.QtCore import QPointF, Qt
+        from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+
+        # Seta pintada a mao: nem o QIcon vetorial nem o glifo de fonte produziam
+        # pixels suficientes sobre o ciano (medido: 6 px escuros). O traco abaixo
+        # e deterministico e independe de fonte instalada.
+        pixmap = QPixmap(18, 18)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#121417"))
+        pen.setWidthF(2.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawLine(QPointF(9.0, 15.0), QPointF(9.0, 4.0))
+        painter.drawLine(QPointF(9.0, 4.0), QPointF(3.8, 9.2))
+        painter.drawLine(QPointF(9.0, 4.0), QPointF(14.2, 9.2))
+        painter.end()
+        self.send_button.setIcon(QIcon(pixmap))
+        self.send_button.setText("")
+
+    def _set_stop_state(self) -> None:
+        """Estado Stop: quadrado solido, sem icone residual."""
+        from PyQt6.QtGui import QIcon
+
+        self.send_button.setIcon(QIcon())
+        self.send_button.setText("\u25A0")
+
     def _cancel_generation(self) -> None:
         """Cancelamento imediato: sinaliza a task e restaura o estado pronto."""
         for worker in list(getattr(self, "tasks", set())):
@@ -245,7 +279,7 @@ class ChatMixin:
         try:
             if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
                 self.thinking_indicator.stop()
-                self.send_button.setText("\u2191")
+                self._set_send_state()
             self.attach_button.setDisabled(False)
             self.connection_label.setText(tr("Generation cancelled"))
             if hasattr(self, "_stop_thinking_rotator"):
@@ -335,9 +369,7 @@ class ChatMixin:
         self.conversation_selector.setEnabled(False)
         self.new_conversation_button.setEnabled(False)
         self.remove_attachment_button.setDisabled(True)
-        self.send_button.setIcon(QIcon())
-        self.send_button.setText("\u25A0")
-        self.connection_label.setText(tr("MARK está pensando..."))
+        self._set_stop_state()
         if hasattr(self, "_start_thinking_rotator"):
             self._start_thinking_rotator()
         if hasattr(self, "thinking_indicator") and self.thinking_indicator is not None:
@@ -507,8 +539,7 @@ class ChatMixin:
                 self.attach_button.setDisabled(False)
             self.conversation_selector.setEnabled(True)
             self.new_conversation_button.setEnabled(True)
-            self.send_button.setText("")
-            self.send_button.setIcon(_mark_icon("send"))
+            self._set_send_state()
             self.attachments.clear()
             self._refresh_attachment_list()
             self._save_conversation_message("assistant", reply, conversation_id)
@@ -531,8 +562,7 @@ class ChatMixin:
             self.conversation_selector.setEnabled(True)
             self.new_conversation_button.setEnabled(True)
             self.remove_attachment_button.setEnabled(self.attachment_list.currentRow() >= 0)
-            self.send_button.setText("")
-            self.send_button.setIcon(_mark_icon("send"))
+            self._set_send_state()
             clean_err = str(message)
 
             title, display_msg = self._simplify_error_details(clean_err)

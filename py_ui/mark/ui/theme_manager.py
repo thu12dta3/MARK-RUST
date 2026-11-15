@@ -675,6 +675,12 @@ pre {{
     white-space: pre-wrap;
 }}
 
+/* Foco limpo: sem retangulo pontilhado nativo em botoes, combos e listas */
+QPushButton:focus, QToolButton:focus, QComboBox:focus,
+QAbstractItemView:focus, QListView:focus, QTreeView:focus {{
+    outline: none;
+}}
+
 /* Wrapper de linha da bolha: substitui o QSS por widget (1 regra global) */
 QWidget#bubbleWrapper {{
     background: transparent;

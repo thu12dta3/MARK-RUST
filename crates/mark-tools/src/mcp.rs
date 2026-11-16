@@ -464,7 +464,9 @@ impl McpRegistry {
                     .push((cfg.name.clone(), format!("{err:#}"))),
             }
         }
-        registry.tools.sort_by(|a, b| a.qualified_name().cmp(&b.qualified_name()));
+        registry
+            .tools
+            .sort_by_key(|tool| tool.qualified_name());
         registry
     }
 

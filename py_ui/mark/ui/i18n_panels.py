@@ -255,7 +255,7 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
     ),
     "Choose the integrations MARK may use. Each card lists the permissions it receives.": (
         "Choose the integrations MARK may use. Each card lists the permissions it receives.",
-        "Escolha as integracoes que o MARK pode usar. Cada cartao lista as permissoes recebidas.",
+        "Escolha as integrações que o MARK pode usar. Cada cartão lista as permissões recebidas.",
         "选择 MARK 可使用的集成。每张卡片列出它获得的权限。",
         "चुनें कि MARK कौन से एकीकरण उपयोग कर सकता है। प्रत्येक कार्ड उसकी अनुमतियाँ दिखाता है।",
         "Elige las integraciones que MARK puede usar. Cada tarjeta lista los permisos que recibe.",

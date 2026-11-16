@@ -224,7 +224,7 @@ class VoiceCallWidget(QWidget):
     layout.setSpacing(20)
 
     header = QHBoxLayout()
-    self.end_call_button = QPushButton("Encerrar e Voltar")
+    self.end_call_button = QPushButton(tr("End and Go Back"))
     self.end_call_button.setObjectName("endCallButton")
     self.end_call_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.end_call_button.clicked.connect(self._handle_end_call)
@@ -248,12 +248,12 @@ class VoiceCallWidget(QWidget):
     self.voice_orb.setAlignment(Qt.AlignmentFlag.AlignCenter)
     center_col.addWidget(self.voice_orb)
 
-    self.state_label = QLabel("Pronto para conversar")
+    self.state_label = QLabel(tr("Ready to talk"))
     self.state_label.setObjectName("callStateLabel")
     self.state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     center_col.addWidget(self.state_label)
 
-    self.detail_label = QLabel("Fale normalmente. O MARK responde diretamente por voz no PC.")
+    self.detail_label = QLabel(tr("Speak normally. MARK answers directly by voice on the PC."))
     self.detail_label.setObjectName("callDetailLabel")
     self.detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     center_col.addWidget(self.detail_label)
@@ -262,19 +262,19 @@ class VoiceCallWidget(QWidget):
 
     output_row = QHBoxLayout()
     output_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    out_lbl = QLabel("Saída de áudio:")
+    out_lbl = QLabel(tr("Audio output:"))
     out_lbl.setStyleSheet("color: #8E95A0; font-size: 12px; font-weight: 400;")
     self.output_selector = QComboBox()
     self.output_selector.setObjectName("audioOutputSelector")
-    self.output_selector.addItem("Alto-falante Padrão do Sistema")
-    self.output_selector.addItem("Fone de Ouvido")
+    self.output_selector.addItem(tr("System Default Speaker"))
+    self.output_selector.addItem(tr("Headphones"))
     output_row.addWidget(out_lbl)
     output_row.addWidget(self.output_selector)
     center_col.addLayout(output_row)
 
     center_col.addSpacing(20)
 
-    self.toggle_call_button = QPushButton("Iniciar chamada")
+    self.toggle_call_button = QPushButton(tr("Start call"))
     self.toggle_call_button.setObjectName("toggleCallButton")
     self.toggle_call_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.toggle_call_button.clicked.connect(self.toggle_call)
@@ -287,13 +287,13 @@ class VoiceCallWidget(QWidget):
     self.is_active = not self.is_active
     if self.is_active:
       self.toggle_call_button.setObjectName("toggleCallButtonActive")
-      self.toggle_call_button.setText("Encerrar chamada")
-      self.state_label.setText("Ouvindo... (Voz ativa)")
+      self.toggle_call_button.setText(tr("End call"))
+      self.state_label.setText(tr("Listening... (Voice active)"))
       self.voice_orb.setStyleSheet("font-size: 64px; color: #3FB950;")
     else:
       self.toggle_call_button.setObjectName("toggleCallButton")
-      self.toggle_call_button.setText("Iniciar chamada")
-      self.state_label.setText("Chamada encerrada")
+      self.toggle_call_button.setText(tr("Start call"))
+      self.state_label.setText(tr("Call ended"))
       self.voice_orb.setStyleSheet("font-size: 64px; color: #00D8F6;")
     self.toggle_call_button.style().unpolish(self.toggle_call_button)
     self.toggle_call_button.style().polish(self.toggle_call_button)
@@ -319,7 +319,7 @@ class MainWindow(
 
   def __init__(self, vault: LLMKeyVault | None = None, parent: QWidget | None = None) -> None:
     super().__init__(parent)
-    self.setWindowTitle("MARK · Assistente Pessoal")
+    self.setWindowTitle(tr("MARK · Personal Assistant"))
     self.setWindowIcon(QIcon(str(ROOT / "assets/mark-desktop.svg")))
     self.setMinimumSize(960, 680)
     self.resize(1280, 850)
@@ -502,7 +502,7 @@ class MainWindow(
     brand_col.setSpacing(0)
     brand_label = QLabel("MARK")
     brand_label.setStyleSheet("color: #EDEDED; font-size: 14px; font-weight: 500; letter-spacing: 0.6px;")
-    caption_label = QLabel("ASSISTENTE PESSOAL")
+    caption_label = QLabel(tr("PERSONAL ASSISTANT"))
     caption_label.setStyleSheet("color: #5F6672; font-size: 9px; font-weight: 500; letter-spacing: 0.5px;")
     brand_col.addWidget(brand_label)
     brand_col.addWidget(caption_label)
@@ -513,11 +513,11 @@ class MainWindow(
     sidebar_layout.addSpacing(8)
 
     # Botão Ação Principal: + Nova Conversa (Exclusivo para Engineer)
-    self.sidebar_new_chat_btn = QPushButton("+ Nova conversa (Engineer)")
+    self.sidebar_new_chat_btn = QPushButton(tr("+ New chat (Engineer)"))
     self.sidebar_new_chat_btn.setObjectName("newChatSidebarButton")
     self.sidebar_new_chat_btn.setFixedHeight(34)
     self.sidebar_new_chat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    self.sidebar_new_chat_btn.setToolTip("Criar uma nova sessão de conversa dedicada no modo Engenheiro")
+    self.sidebar_new_chat_btn.setToolTip(tr("Create a dedicated conversation in Engineer mode"))
     self.sidebar_new_chat_btn.clicked.connect(self._create_new_conversation_from_sidebar)
     self.sidebar_new_chat_btn.hide()
     sidebar_layout.addWidget(self.sidebar_new_chat_btn)
@@ -525,19 +525,19 @@ class MainWindow(
     # Filtro Rápido de Conversas
     self.sidebar_search_input = QLineEdit()
     self.sidebar_search_input.setObjectName("sidebarSearchInput")
-    self.sidebar_search_input.setPlaceholderText("Filtrar conversas...")
+    self.sidebar_search_input.setPlaceholderText(tr("Filter conversations..."))
     self.sidebar_search_input.setFixedHeight(30)
     self.sidebar_search_input.textChanged.connect(self._filter_sidebar_conversations)
     sidebar_layout.addWidget(self.sidebar_search_input)
 
     sidebar_layout.addSpacing(8)
 
-    section_conv = QLabel("AGENTES & MODOS")
+    section_conv = QLabel(tr("AGENTS & MODES"))
     section_conv.setStyleSheet("color: #5F6672; font-size: 10px; font-weight: 500; letter-spacing: 0.5px; padding-left: 4px;")
     sidebar_layout.addWidget(section_conv)
 
     # Botão "Geral" (muda o perfil no chat no índice 0)
-    self.chat_nav_button = QPushButton("Geral")
+    self.chat_nav_button = QPushButton(tr("General"))
     self.chat_nav_button.setObjectName("chatNavButton")
     self.chat_nav_button.setProperty("class", "navButtonActive")
     self.chat_nav_button.setIcon(_mark_icon("chat"))
@@ -549,7 +549,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.chat_nav_button)
 
     # Botão "Engenheiro" (muda o perfil no chat no índice 0)
-    self.engineer_button = QPushButton("Engenheiro")
+    self.engineer_button = QPushButton(tr("Engineer"))
     self.engineer_button.setObjectName("engineerNavButton")
     self.engineer_button.setProperty("class", "navButton")
     self.engineer_button.setIcon(_mark_icon("github"))
@@ -560,7 +560,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.engineer_button)
 
     # Botão "Professor" (muda o perfil no chat no índice 0)
-    self.professor_button = QPushButton("Professor")
+    self.professor_button = QPushButton(tr("Professor"))
     self.professor_button.setObjectName("professorNavButton")
     self.professor_button.setProperty("class", "navButton")
     self.professor_button.setIcon(_mark_icon("chat"))
@@ -575,12 +575,12 @@ class MainWindow(
     self.vision_nav_button = None
 
     sidebar_layout.addSpacing(8)
-    section_space = QLabel("ESPAÇO & SISTEMA")
+    section_space = QLabel(tr("SPACE & SYSTEM"))
     section_space.setStyleSheet("color: #5F6672; font-size: 10px; font-weight: 500; letter-spacing: 0.5px; padding-left: 4px;")
     sidebar_layout.addWidget(section_space)
 
     # Botão "Biblioteca"
-    self.library_nav_button = QPushButton("Biblioteca")
+    self.library_nav_button = QPushButton(tr("Library"))
     self.library_nav_button.setObjectName("libraryNavButton")
     self.library_nav_button.setProperty("class", "navButton")
     self.library_nav_button.setIcon(_mark_icon("attach"))
@@ -591,7 +591,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.library_nav_button)
 
     # Botão "Evolução"
-    self.evolution_nav_button = QPushButton("Evolução")
+    self.evolution_nav_button = QPushButton(tr("Evolution"))
     self.evolution_nav_button.setObjectName("evolutionNavButton")
     self.evolution_nav_button.setProperty("class", "navButton")
     self.evolution_nav_button.setIcon(_mark_icon("evolution"))
@@ -602,7 +602,7 @@ class MainWindow(
     self.evolution_nav_button.clicked.connect(self.open_evolution)
 
     # Botão "Chamada de Voz" (muda para o índice 2 do QStackedWidget)
-    self.call_nav_button = QPushButton("Chamada de Voz")
+    self.call_nav_button = QPushButton(tr("Voice Call"))
     self.call_nav_button.setObjectName("callNavButton")
     self.call_nav_button.setProperty("class", "navButton")
     self.call_nav_button.setIcon(_mark_icon("call"))
@@ -613,7 +613,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.call_nav_button)
 
     # Botão "Dispositivos" (abre o Hub de Dispositivos e Pareamento)
-    self.devices_nav_button = QPushButton("Dispositivos")
+    self.devices_nav_button = QPushButton(tr("Devices"))
     self.devices_nav_button.setObjectName("devicesNavButton")
     self.devices_nav_button.setProperty("class", "navButton")
     self.devices_nav_button.setIcon(_mark_icon("device"))
@@ -626,7 +626,7 @@ class MainWindow(
     # Botão Menu de Ferramentas Categorizado (com indicador de seta perfeitamente alinhado à direita)
     self.tools_button = QToolButton()
     self.tools_button.setObjectName("toolsButton")
-    self.tools_button.setText("Ferramentas")
+    self.tools_button.setText(tr("Tools"))
     self.tools_button.setIcon(_mark_icon("menu"))
     self.tools_button.setIconSize(QSize(16, 16))
     self.tools_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -639,7 +639,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.tools_button)
 
     sidebar_layout.addSpacing(8)
-    section_hist = QLabel("CONVERSAS RECENTES")
+    section_hist = QLabel(tr("RECENT CHATS"))
     section_hist.setStyleSheet("color: #5F6672; font-size: 10px; font-weight: 500; letter-spacing: 0.5px; padding-left: 4px;")
     sidebar_layout.addWidget(section_hist)
 
@@ -658,7 +658,7 @@ class MainWindow(
     sidebar_layout.addWidget(sidebar_divider)
 
     # Botão "Configurações" no rodapé da Sidebar (como no Antigravity / Claude / LM Studio)
-    self.settings_nav_button = QPushButton("Configurações")
+    self.settings_nav_button = QPushButton(tr("Settings"))
     self.settings_nav_button.setObjectName("settingsNavButton")
     self.settings_nav_button.setProperty("class", "navButton")
     self.settings_nav_button.setIcon(_mark_icon("menu"))
@@ -669,7 +669,7 @@ class MainWindow(
     sidebar_layout.addWidget(self.settings_nav_button)
 
     # Status compacto na base da sidebar
-    self.api_status_label = QLabel("MARK · Operacional")
+    self.api_status_label = QLabel(tr("MARK · Operational"))
     self.api_status_label.setStyleSheet("color: #3FB950; font-size: 11px; font-weight: 400; padding-left: 4px;")
     sidebar_layout.addWidget(self.api_status_label)
 
@@ -1103,22 +1103,22 @@ class MainWindow(
           title.setText(tr("What shall we build?"))
           hint.setText(hardware)
           if eyebrow is not None:
-              eyebrow.setText("ENGINEER · CODEX WORKFLOW")
+              eyebrow.setText(tr("ENGINEER · CODEX WORKFLOW"))
       elif specialization == "professor":
           title.setText(tr("What shall we study?"))
           hint.setText(tr("Pick a subject and an action in the Professor bar."))
           if eyebrow is not None:
-              eyebrow.setText("PROFESSOR · ASTRA")
+              eyebrow.setText(tr("PROFESSOR · ASTRA"))
       elif specialization == "vision":
           title.setText(tr("What shall we look at?"))
           hint.setText(tr("Attach an image to the composer to start."))
           if eyebrow is not None:
-              eyebrow.setText("VISION · MULTIMODAL")
+              eyebrow.setText(tr("VISION · MULTIMODAL"))
       else:
           title.setText(tr("What shall we do today?"))
           hint.setText(tr("Chat, plan, or explore an idea with MARK."))
           if eyebrow is not None:
-              eyebrow.setText("UM ASSISTENTE. TODOS OS SEUS DISPOSITIVOS.")
+              eyebrow.setText(tr("ONE ASSISTANT. ALL YOUR DEVICES."))
 
   def _open_voice_call(self) -> None:
       """Abre o painel de chamada de voz com ondas e mute sincronizado."""
@@ -1498,17 +1498,17 @@ class MainWindow(
 
     heading = QVBoxLayout()
     heading.setSpacing(2)
-    title = QLabel("Conversa")
+    title = QLabel(tr("Chat"))
     title.setObjectName("title")
     heading.addWidget(title)
     self.page_heading = title
-    self.connection_label = QLabel("MARK operacional · memória compartilhada ativa")
+    self.connection_label = QLabel(tr("MARK operational · shared memory active"))
     self.connection_label.setObjectName("connectionStatus")
     heading.addWidget(self.connection_label)
     top.addLayout(heading)
 
     # Selo do Engineer removido do header: o titulo/subtitulo ficam sem sobreposicao.
-    self.engineer_chat_badge = QLabel("ENGINEER · MARK 1.5B")
+    self.engineer_chat_badge = QLabel(tr("ENGINEER · MARK 1.5B"))
     self.engineer_chat_badge.setObjectName("engineerBadge")
     self.engineer_chat_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
     self.engineer_chat_badge.hide()
@@ -1516,7 +1516,7 @@ class MainWindow(
     self.conversation_selector = QComboBox()
     self.conversation_selector.setObjectName("chatSelector")
     self.conversation_selector.setMinimumWidth(190)
-    self.conversation_selector.setToolTip("Conversas separadas por perfil; memórias salvas continuam compartilhadas")
+    self.conversation_selector.setToolTip(tr("Conversations separated by profile; saved memories stay shared"))
     self.conversation_selector.currentIndexChanged.connect(self._select_conversation_from_header)
     self.conversation_selector.hide()
     top.addWidget(self.conversation_selector)
@@ -1530,7 +1530,7 @@ class MainWindow(
     self.delete_conversation_button.setObjectName("iconButton")
     self.delete_conversation_button.setIcon(_mark_icon("trash"))
     self.delete_conversation_button.setIconSize(QSize(16, 16))
-    self.delete_conversation_button.setToolTip("Excluir conversa atual")
+    self.delete_conversation_button.setToolTip(tr("Delete current conversation"))
     self.delete_conversation_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.delete_conversation_button.clicked.connect(lambda: self._delete_conversation(self.current_conversation_id, self.current_specialization))
     self.delete_conversation_button.hide()
@@ -1538,20 +1538,20 @@ class MainWindow(
     top.addStretch()
 
     # Botão Chamada no cabeçalho (muda para o índice 2 do QStackedWidget)
-    self.call_button = QPushButton("Chamada")
+    self.call_button = QPushButton(tr("Call"))
     self.call_button.setObjectName("callButton")
     self.call_button.setIcon(_mark_icon("call"))
     self.call_button.setIconSize(QSize(16, 16))
-    self.call_button.setToolTip("Iniciar chamada de voz in-app")
+    self.call_button.setToolTip(tr("Start in-app voice call"))
     self.call_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.call_button.clicked.connect(self._open_voice_call)
 
     # Botão Configurações no cabeçalho (muda para o índice 1 do QStackedWidget)
-    self.settings_button = QPushButton("Configurações")
+    self.settings_button = QPushButton(tr("Settings"))
     self.settings_button.setObjectName("settingsButton")
     self.settings_button.setIcon(_mark_icon("menu"))
     self.settings_button.setIconSize(QSize(16, 16))
-    self.settings_button.setToolTip("Abrir painel de configurações")
+    self.settings_button.setToolTip(tr("Open settings panel"))
     self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.settings_button.clicked.connect(self.open_settings)
 
@@ -1566,7 +1566,7 @@ class MainWindow(
       " border-radius: 8px; padding: 3px 10px; font-size: 15px; font-weight: 600; }"
       "QPushButton#iconButton:hover { border-color: #00D8F6; color: #00D8F6; }"
     )
-    self.refresh_button.setToolTip("Atualizar estado do MARK")
+    self.refresh_button.setToolTip(tr("Refresh MARK status"))
     self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.refresh_button.clicked.connect(self.refresh_status)
 
@@ -1586,7 +1586,7 @@ class MainWindow(
       self.language_selector.addItem(LANGUAGE_NAMES[_code], _code)
     _lang_index = self.language_selector.findData(current_language())
     self.language_selector.setCurrentIndex(_lang_index if _lang_index >= 0 else 0)
-    self.language_selector.setToolTip("Idioma da interface")
+    self.language_selector.setToolTip(tr("Interface language"))
     self.language_selector.currentIndexChanged.connect(self._on_language_selected)
     top.addWidget(self.language_selector)
 
@@ -1603,7 +1603,7 @@ class MainWindow(
     feedback_layout = QVBoxLayout(self.engineer_work_feedback)
     feedback_layout.setContentsMargins(12, 6, 12, 6)
     feedback_layout.setSpacing(4)
-    self.engineer_work_label = QLabel("Engineer está analisando sua solicitação...")
+    self.engineer_work_label = QLabel(tr("Engineer is analysing your request..."))
     self.engineer_work_label.setObjectName("engineerWorkLabel")
     feedback_layout.addWidget(self.engineer_work_label)
     self.engineer_work_bar = QProgressBar()
@@ -1633,17 +1633,17 @@ class MainWindow(
     empty = QVBoxLayout(self.empty_state)
     empty.setSpacing(10)
     empty.addStretch(2)
-    eyebrow = QLabel("UM ASSISTENTE. TODOS OS SEUS DISPOSITIVOS.")
+    eyebrow = QLabel(tr("ONE ASSISTANT. ALL YOUR DEVICES."))
     eyebrow.setObjectName("welcomeEyebrow")
     self.empty_eyebrow = eyebrow
     eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
     empty.addWidget(eyebrow)
-    welcome = QLabel("O que vamos fazer hoje?")
+    welcome = QLabel(tr("What shall we do today?"))
     welcome.setObjectName("welcomeTitle")
     self.empty_title = welcome
     welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
     empty.addWidget(welcome)
-    hint = QLabel("Converse, planeje ou explore uma ideia com o MARK.")
+    hint = QLabel(tr("Chat, plan, or explore an idea with MARK."))
     hint.setObjectName("welcomeHint")
     self.empty_hint = hint
     hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1735,7 +1735,7 @@ class MainWindow(
 
     self.attach_button.setIcon(_vi_attach("attach", "#8E95A0", 20))
     self.attach_button.setText("")
-    self.attach_button.setToolTip("Anexar arquivos (imagens, documentos, código)")
+    self.attach_button.setToolTip(tr("Attach files (images, documents, code)"))
     self.attach_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.attach_button.setFixedHeight(40)
     self.attach_button.setFixedWidth(40)
@@ -1744,7 +1744,7 @@ class MainWindow(
 
     self.input = Composer()
     self.input.setObjectName("messageInput")
-    self.input.setPlaceholderText("Escreva para o MARK ou arraste um arquivo aqui... (Shift+Enter nova linha)")
+    self.input.setPlaceholderText(tr("Write to MARK or drop a file here... (Shift+Enter for a new line)"))
     self.input.setFixedHeight(58)
     self.input.send_requested.connect(self.send_message)
     self.input.files_dropped.connect(self._add_attachment_paths)
@@ -1774,7 +1774,7 @@ class MainWindow(
     self.remove_attachment_button.setObjectName("attachButton")
     self.remove_attachment_button.setIcon(_mark_icon("trash"))
     self.remove_attachment_button.setIconSize(QSize(16, 16))
-    self.remove_attachment_button.setToolTip("Remover o arquivo selecionado")
+    self.remove_attachment_button.setToolTip(tr("Remove selected file"))
     self.remove_attachment_button.setDisabled(True)
     self.remove_attachment_button.hide()
     self.remove_attachment_button.clicked.connect(self.remove_selected_attachment)
@@ -1846,9 +1846,9 @@ class MainWindow(
     self.reasoning_selector = QComboBox()
     self.reasoning_selector.setObjectName("reasoningSelector")
     self.reasoning_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-    self.reasoning_selector.addItem("Raciocínio Instantâneo", "instant")
-    self.reasoning_selector.addItem("Raciocínio Balanceado", "medium")
-    self.reasoning_selector.addItem("Raciocínio Profundo", "high")
+    self.reasoning_selector.addItem(tr("Instant reasoning"), "instant")
+    self.reasoning_selector.addItem(tr("Balanced reasoning"), "medium")
+    self.reasoning_selector.addItem(tr("Deep reasoning"), "high")
     from ..config import get_reasoning_level, set_reasoning_level
     _saved_idx = self.reasoning_selector.findData(get_reasoning_level())
     self.reasoning_selector.setCurrentIndex(_saved_idx if _saved_idx >= 0 else 1)
@@ -1856,9 +1856,7 @@ class MainWindow(
       lambda _i: set_reasoning_level(self.reasoning_selector.currentData())
     )
     self.reasoning_selector.setToolTip(
-      "Instantâneo: sem raciocínio estendido, contexto 4k e até 512 tokens.\n"
-      "Balanceado: contexto 6k e até 2048 tokens.\n"
-      "Profundo: contexto 8k e até 4096 tokens, com explicação mais aprofundada."
+      tr("Instant: no extended reasoning, 4k context and up to 512 tokens.\nBalanced: 6k context and up to 2048 tokens.\nDeep: 8k context and up to 4096 tokens, with a deeper explanation.")
     )
     self.model_selector.currentIndexChanged.connect(
       lambda _index: self.reasoning_selector.setEnabled(
@@ -1876,7 +1874,7 @@ class MainWindow(
 
     self.send_button.setIcon(_vi_send("send", "#121417", 18))
     self.send_button.setText("")
-    self.send_button.setToolTip("Enviar mensagem")
+    self.send_button.setToolTip(tr("Send message"))
     self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.send_button.setStyleSheet(
       "QPushButton#sendButton { background: #00D8F6; color: #121417; border-radius: 16px; border: none; padding: 4px; min-width: 36px; max-width: 36px; min-height: 32px; max-height: 32px; font-weight: 500; } "
@@ -1892,7 +1890,7 @@ class MainWindow(
     inferior_row.setContentsMargins(0, 4, 0, 0)
     inferior_row.setSpacing(8)
 
-    self.composer_hint = QLabel("Enter envia · Shift+Enter nova linha")
+    self.composer_hint = QLabel(tr("Enter sends · Shift+Enter for a new line"))
     self.composer_hint.setObjectName("composerHint")
     inferior_row.addWidget(self.composer_hint)
 
@@ -1921,15 +1919,15 @@ class MainWindow(
     telemetry_layout.setContentsMargins(0, 4, 0, 0)
     telemetry_layout.setSpacing(14)
 
-    self.sidebar_toggle_button = QPushButton(" Alternar Menu")
+    self.sidebar_toggle_button = QPushButton(tr(" Toggle Menu"))
     self.sidebar_toggle_button.setObjectName("sidebarToggleButton")
-    self.sidebar_toggle_button.setToolTip("Expandir ou recolher barra lateral")
+    self.sidebar_toggle_button.setToolTip(tr("Expand or collapse the sidebar"))
     self.sidebar_toggle_button.clicked.connect(self.toggle_sidebar)
     self.sidebar_toggle_button.hide()
 
-    self.cmd_palette_btn = QPushButton("⌘K Comandos")
+    self.cmd_palette_btn = QPushButton(tr("⌘K Commands"))
     self.cmd_palette_btn.setObjectName("cmdPaletteButton")
-    self.cmd_palette_btn.setToolTip("Abrir Menu de Comandos (Ctrl+K / Cmd+K)")
+    self.cmd_palette_btn.setToolTip(tr("Open command menu (Ctrl+K / Cmd+K)"))
     self.cmd_palette_btn.clicked.connect(self.open_command_palette)
     self.cmd_palette_btn.setVisible(False)
 
@@ -1940,7 +1938,7 @@ class MainWindow(
     self._bwrap_ok = _probe_bwrap_support()
     self._refresh_telemetry_texts()
     self.bwrap_status_label.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;")
-    self.bwrap_status_label.setToolTip("Clique para ver detalhes de segurança BWRAP")
+    self.bwrap_status_label.setToolTip(tr("Click to see BWRAP security details"))
     self.bwrap_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
     self.bwrap_status_label.mousePressEvent = lambda _ev: self.show_technical_details("bwrap")
     telemetry_layout.addWidget(self.bwrap_status_label)
@@ -1950,15 +1948,15 @@ class MainWindow(
     self._mtls_ok = bool(shutil.which("tailscale"))
     self._refresh_telemetry_texts()
     self.mtls_status_label.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;")
-    self.mtls_status_label.setToolTip("Clique para ver detalhes de segurança mTLS")
+    self.mtls_status_label.setToolTip(tr("Click to see mTLS security details"))
     self.mtls_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
     self.mtls_status_label.mousePressEvent = lambda _ev: self.show_technical_details("mtls")
     telemetry_layout.addWidget(self.mtls_status_label)
 
-    self.ctx_status_label = QLabel("CTX: --")
+    self.ctx_status_label = QLabel(tr("CTX: --"))
     self.ctx_status_label.setObjectName("ctxStatusLabel")
     self.ctx_status_label.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;")
-    self.ctx_status_label.setToolTip("Clique para ver detalhes de janela de contexto")
+    self.ctx_status_label.setToolTip(tr("Click to see context window details"))
     self.ctx_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
     self.ctx_status_label.mousePressEvent = lambda _ev: self.show_technical_details("ctx")
     telemetry_layout.addWidget(self.ctx_status_label)
@@ -2856,7 +2854,7 @@ class MainWindow(
     button = self.sender()
     if isinstance(button, QPushButton):
       button.setDisabled(True)
-      button.setText("Testando câmera...")
+      button.setText(tr("Testing camera..."))
 
     def check():
       result = subprocess.run([str(ROOT / "scripts/test_camera.sh")], capture_output=True, text=True, timeout=35)
@@ -2866,12 +2864,12 @@ class MainWindow(
 
     def done(message):
       button.setDisabled(False)
-      button.setText("Testar câmera")
+      button.setText(tr("Test camera"))
       QMessageBox.information(self, "Teste da câmera", message)
 
     def failed(message):
       button.setDisabled(False)
-      button.setText("Testar câmera")
+      button.setText(tr("Test camera"))
       QMessageBox.warning(self, "Teste da câmera", message)
 
     self._task(check, done, failed)

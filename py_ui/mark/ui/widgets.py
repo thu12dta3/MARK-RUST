@@ -103,15 +103,9 @@ class MessageBubbleWidget(QFrame):
       QSizePolicy.Policy.Preferred,
     )
 
-    # Claude/Linear: sem bordas duras, usuario com fundo carvão #20252C e raio 8px, MARK direto sobre fundo #121417
-    if is_user:
-      self.setStyleSheet(
-        "background: #20252C; border: none; border-radius: 8px; padding: 8px 14px; margin: 0px 0px 0px 48px;"
-      )
-    else:
-      self.setStyleSheet(
-        "background: #121417; border: none; border-radius: 0px; padding: 6px 0px; margin: 0px;"
-      )
+    # Claude/Linear: sem bordas duras, usuario com fundo carvão #20252C e raio 8px,
+    # MARK direto sobre fundo #121417. O QSS vive em ThemeManager (#userBubble /
+    # #assistantBubble), entao cada bolha nao reinstala estilo no boot.
 
     layout = QVBoxLayout(self)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -123,10 +117,6 @@ class MessageBubbleWidget(QFrame):
       sender_title = tr("You") if not orig else f"{tr('You')} · {orig}"
       self.who = QLabel(sender_title)
       self.who.setObjectName("messageSender")
-      self.who.setStyleSheet(
-        "color: #8E95A0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; "
-        "font-size: 10px; font-weight: 500; border: none; background: transparent; padding: 0px; margin: 0px;"
-      )
       self.who.setAlignment(Qt.AlignmentFlag.AlignRight)
       layout.addWidget(self.who)
     else:
@@ -138,11 +128,6 @@ class MessageBubbleWidget(QFrame):
     self.label.setObjectName("messageBody")
     self.label.setTextFormat(Qt.TextFormat.RichText)
     self.label.setWordWrap(True)
-    self.label.setStyleSheet(
-      "color: #EDEDED; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; "
-      "font-size: 13px; font-weight: 400; border: none; background: transparent; "
-      "selection-background-color: #00D8F6; selection-color: #121417; margin: 0px; padding: 0px;"
-    )
     self.label.setTextInteractionFlags(
       Qt.TextInteractionFlag.TextSelectableByMouse
       | Qt.TextInteractionFlag.LinksAccessibleByMouse
@@ -182,7 +167,7 @@ class MessageBubbleWidget(QFrame):
           "background: #16191D; color: #EDEDED; font-family: Inter, sans-serif; "
           "border: 1px solid #1E2228; border-radius: 8px; padding: 4px;"
         )
-        menu.addAction("Copiar resposta", lambda: QApplication.clipboard().setText(value))
+        menu.addAction(tr("Copy answer"), lambda: QApplication.clipboard().setText(value))
         menu.exec(target.mapToGlobal(position))
 
       self.label.customContextMenuRequested.connect(context_menu)
@@ -347,7 +332,7 @@ class CtxMeterWidget(QFrame):
     layout.setSpacing(8)
     self.bar = _CtxBar(self)
     self.bar.setFixedSize(52, 6)
-    self.text_label = QLabel("CTX: -")
+    self.text_label = QLabel(tr("CTX: -"))
     self.text_label.setObjectName("ctxMeterText")
     self.text_label.setStyleSheet("color: #8B949E; font-size: 11px;")
     layout.addWidget(self.bar)
@@ -364,7 +349,7 @@ class CtxMeterWidget(QFrame):
     self._used, self._limit = used, limit
     if limit <= 0:
       self.bar.set_ratio(0.0, self.CYAN)
-      self.text_label.setText("CTX: -")
+      self.text_label.setText(tr("CTX: -"))
       self.text_label.setStyleSheet("color: #8B949E; font-size: 11px;")
       return
     ratio = min(1.0, used / float(limit))
@@ -825,7 +810,7 @@ class ProviderSelectorWidget(QComboBox):
         self.setItemData(item_idx, tooltip, Qt.ItemDataRole.ToolTipRole)
         valid_items_count += 1
     else:
-      self.addItem("Nenhum modelo Ollama instalado", None)
+      self.addItem(tr("No Ollama model installed"), None)
       item_idx = self.count() - 1
       std_item = self.model().item(item_idx)
       if std_item is not None:
@@ -863,7 +848,7 @@ class ProviderSelectorWidget(QComboBox):
     if valid_items_count == 0:
       self.clear()
       self._models_meta = []
-      self.addItem("Nenhum provedor ativo - Configure as Chaves", None)
+      self.addItem(tr("No active provider - configure the keys"), None)
       item_idx = self.count() - 1
       std_item = self.model().item(item_idx)
       if std_item is not None:
@@ -953,10 +938,10 @@ class ProviderSelectorWidget(QComboBox):
       enabled = meta.get("enabled", True)
 
       if not enabled or meta.get("data") is None:
-        self.setToolTip("Nenhum provedor ou modelo ativo.")
+        self.setToolTip(tr("No active provider or model."))
         if self._badge_widget is not None:
-          self._badge_widget.setText("Indisponível")
-          self._badge_widget.setToolTip("Configure modelos no Ollama ou chaves de API no cofre.")
+          self._badge_widget.setText(tr("Unavailable"))
+          self._badge_widget.setToolTip(tr("Configure models in Ollama or API keys in the vault."))
           self._badge_widget.setProperty("processing", "disabled")
           self._badge_widget.adjustSize()
           self._badge_widget.setMinimumWidth(self._badge_widget.sizeHint().width())
@@ -1035,7 +1020,7 @@ class ActionConsentDialog(QDialog):
     self._build_ui()
 
   def _build_ui(self) -> None:
-    self.setWindowTitle("Confirmação de Ação · Human-in-the-Loop")
+    self.setWindowTitle(tr("Action Confirmation · Human-in-the-Loop"))
     self.setModal(True)
     self.setMinimumWidth(440)
     self.setStyleSheet("""
@@ -1119,7 +1104,7 @@ class ActionConsentDialog(QDialog):
     layout.setContentsMargins(20, 20, 20, 20)
     layout.setSpacing(14)
 
-    title = QLabel("Permissão de Execução Agentizada")
+    title = QLabel(tr("Agentic Execution Permission"))
     title.setObjectName("dialogTitle")
     layout.addWidget(title)
 
@@ -1130,14 +1115,14 @@ class ActionConsentDialog(QDialog):
     layout.addWidget(prompt)
 
     desc = QLabel(
-      "Esta operação pode alterar arquivos externos, realizar commits ou disparar chamadas externas que exigem consentimento."
+      tr("This operation may change external files, create commits or trigger external calls that require consent.")
     )
     desc.setObjectName("dialogPrompt")
     desc.setWordWrap(True)
     layout.addWidget(desc)
 
     if self.arguments:
-      layout.addWidget(QLabel("Parâmetros solicitados:"))
+      layout.addWidget(QLabel(tr("Requested parameters:")))
       args_box = QTextEdit()
       args_box.setObjectName("argsPreview")
       args_box.setReadOnly(True)
@@ -1146,7 +1131,7 @@ class ActionConsentDialog(QDialog):
       layout.addWidget(args_box)
 
     # Checkbox: Lembrar desta decisão / Autorizar sempre para esta API
-    self.remember_checkbox = QCheckBox("Lembrar desta decisão (Autorizar sempre para esta API)")
+    self.remember_checkbox = QCheckBox(tr("Remember this decision (always authorise this API)"))
     self.remember_checkbox.setObjectName("rememberConsentCheckBox")
     self.remember_checkbox.setChecked(False)
     layout.addWidget(self.remember_checkbox)
@@ -1155,12 +1140,12 @@ class ActionConsentDialog(QDialog):
     btn_row.setSpacing(10)
     btn_row.addStretch(1)
 
-    cancel_btn = QPushButton("Cancelar")
+    cancel_btn = QPushButton(tr("Cancel"))
     cancel_btn.setObjectName("cancelBtn")
     cancel_btn.clicked.connect(self._on_cancel)
     btn_row.addWidget(cancel_btn)
 
-    auth_btn = QPushButton("Autorizar")
+    auth_btn = QPushButton(tr("Authorize"))
     auth_btn.setObjectName("authorizeBtn")
     auth_btn.clicked.connect(self._on_authorize)
     btn_row.addWidget(auth_btn)
@@ -1305,36 +1290,36 @@ class GodsEyeStatusWidget(QFrame):
     header_row = QHBoxLayout()
     header_row.setSpacing(8)
 
-    self.title_label = QLabel("GOD'S EYE VIEW · EXECUÇÃO AGENTIZADA")
+    self.title_label = QLabel(tr("GOD'S EYE VIEW · AGENTIC EXECUTION"))
     self.title_label.setObjectName("godsEyeTitle")
     header_row.addWidget(self.title_label)
 
-    self.phase_badge = QLabel("Ferramenta Solicitada")
+    self.phase_badge = QLabel(tr("Requested Tool"))
     self.phase_badge.setObjectName("phaseBadge")
     self.phase_badge.setProperty("phase", "requested")
     header_row.addWidget(self.phase_badge)
 
-    self.step_label = QLabel("Passo 1/3")
+    self.step_label = QLabel(tr("Step 1/3"))
     self.step_label.setObjectName("godsEyeStep")
     header_row.addWidget(self.step_label)
 
     header_row.addStretch(1)
     col_info.addLayout(header_row)
 
-    self.action_label = QLabel("Aguardando Ferramenta")
+    self.action_label = QLabel(tr("Waiting for Tool"))
     self.action_label.setObjectName("godsEyeAction")
     col_info.addWidget(self.action_label)
 
     layout.addLayout(col_info, 1)
 
-    self.cancel_button = QPushButton("Cancelar Tarefa")
+    self.cancel_button = QPushButton(tr("Cancel Task"))
     self.cancel_button.setObjectName("godsEyeCancelBtn")
     self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.cancel_button.clicked.connect(self._on_cancel_clicked)
     layout.addWidget(self.cancel_button)
 
   def _on_cancel_clicked(self) -> None:
-    self.action_label.setText("Cancelando tarefa...")
+    self.action_label.setText(tr("Cancelling task..."))
     self.cancel_button.setEnabled(False)
     self.cancel_requested.emit()
 
@@ -1357,15 +1342,15 @@ class GodsEyeStatusWidget(QFrame):
     self.show()
     self.cancel_button.setEnabled(True)
     if "solicitada" in cat_lower or "request" in cat_lower or "waiting" in cat_lower:
-      self.phase_badge.setText("Ferramenta Solicitada")
+      self.phase_badge.setText(tr("Requested Tool"))
       self.phase_badge.setProperty("phase", "requested")
       display_action = action_detail or "Aguardando Ferramenta"
     elif "executada" in cat_lower or "executando" in cat_lower or "execut" in cat_lower:
-      self.phase_badge.setText("Ação Executada")
+      self.phase_badge.setText(tr("Action Executed"))
       self.phase_badge.setProperty("phase", "executing")
       display_action = action_detail or (f"Executando {tool_name}..." if tool_name else "Lendo Repositório")
     elif "confirmado" in cat_lower or "sucesso" in cat_lower or "confirm" in cat_lower:
-      self.phase_badge.setText("Sucesso Confirmado")
+      self.phase_badge.setText(tr("Success Confirmed"))
       self.phase_badge.setProperty("phase", "confirmed")
       display_action = action_detail or "Analisando Resultado"
     else:
@@ -1451,7 +1436,7 @@ class CitationViewerDialog(QDialog):
     header_layout.addWidget(header_title)
     header_layout.addStretch()
 
-    badge = QLabel(" Ancoragem Verificada")
+    badge = QLabel(tr(" Verified Anchoring"))
     badge.setStyleSheet("""
       background: rgba(63, 185, 80, 0.2);
       color: #3FB950;
@@ -1473,7 +1458,7 @@ class CitationViewerDialog(QDialog):
     layout.addWidget(meta_label)
 
     # Trecho original
-    section_label = QLabel("Trecho Original Ancorado:")
+    section_label = QLabel(tr("Anchored Original Excerpt:"))
     section_label.setStyleSheet("font-size: 12px; font-weight: 500; color: #8E95A0; margin-top: 4px;")
     layout.addWidget(section_label)
 
@@ -1485,7 +1470,7 @@ class CitationViewerDialog(QDialog):
     # Botão fechar
     btn_layout = QHBoxLayout()
     btn_layout.addStretch()
-    close_btn = QPushButton("Fechar")
+    close_btn = QPushButton(tr("Close"))
     close_btn.clicked.connect(self.accept)
     btn_layout.addWidget(close_btn)
     layout.addLayout(btn_layout)
@@ -1527,7 +1512,7 @@ class DirectoryPickerWidget(QWidget):
     self.path_input = QLineEdit(self._current_path)
     self.path_input.setObjectName("directoryPickerInput")
     self.path_input.setReadOnly(True)
-    self.path_input.setPlaceholderText("Nenhum diretório selecionado")
+    self.path_input.setPlaceholderText(tr("No directory selected"))
     self.path_input.setStyleSheet(
       f"QLineEdit#directoryPickerInput {{"
       f" background: {t.BG_SURFACE};"
@@ -1541,7 +1526,7 @@ class DirectoryPickerWidget(QWidget):
     )
     row.addWidget(self.path_input, 1)
 
-    self.browse_button = QPushButton("Procurar...")
+    self.browse_button = QPushButton(tr("Browse..."))
     self.browse_button.setObjectName("directoryPickerBrowseButton")
     self.browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
     self.browse_button.setStyleSheet(
@@ -2159,7 +2144,7 @@ class InferenceRowNavigationWidget(QWidget):
 
     self.blockSignals(True)
     self.clear()
-    self.addItem("--- MOTOR LOCAL & 1-BIT ---", userData=None)
+    self.addItem(tr("--- LOCAL ENGINE & 1-BIT ---"), userData=None)
     self.setItemData(0, False, Qt.ItemFlag.ItemIsEnabled)
     target_idx = 1
     for m_id in avail:

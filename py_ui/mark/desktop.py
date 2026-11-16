@@ -56,6 +56,7 @@ MOBILE_SERVICE = "mark-mobile.service"
 
 
 import faulthandler as _faulthandler
+from .ui.i18n import tr
 from pathlib import Path as _FaultPath
 
 # Pilha completa em SIGSEGV/SIGABRT (Wayland/Qt).
@@ -124,17 +125,17 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         brand_row.addWidget(brand)
         brand_row.addStretch()
         side_layout.addLayout(brand_row)
-        tagline = QLabel("ASSISTENTE PESSOAL")
+        tagline = QLabel(tr("PERSONAL ASSISTANT"))
         tagline.setObjectName("brandCaption")
         side_layout.addWidget(tagline)
         side_layout.addSpacing(24)
         side_layout.addWidget(self._section_label("CONVERSAR"))
-        self.shared_chat_button = QPushButton("Geral")
+        self.shared_chat_button = QPushButton(tr("General"))
         self.shared_chat_button.setIcon(_mark_icon("chat"))
         self.shared_chat_button.setObjectName("navButtonActive")
         self.shared_chat_button.setIconSize(QSize(17, 17))
         self.shared_chat_button.setFixedHeight(42)
-        self.shared_chat_button.setToolTip("Conversa compartilhada, chamada e visão")
+        self.shared_chat_button.setToolTip(tr("Shared chat, call and vision"))
         self.shared_chat_button.clicked.connect(lambda: self.open_area("general"))
         side_layout.addWidget(self.shared_chat_button)
         self.engineer_button = self._nav_button("Engenheiro", "github")
@@ -163,7 +164,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         side_layout.addWidget(self.evolution_nav_button)
         self.tools_button = QToolButton()
         self.tools_button.setObjectName("toolsButton")
-        self.tools_button.setText("Ferramentas")
+        self.tools_button.setText(tr("Tools"))
         self.tools_button.setIcon(_mark_icon("menu"))
         self.tools_button.setIconSize(QSize(17, 17))
         self.tools_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -259,20 +260,20 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         toggle.setObjectName("iconButton")
         toggle.setIcon(_mark_icon("menu"))
         toggle.setIconSize(QSize(19, 19))
-        toggle.setToolTip("Menu de Comandos (Ctrl+K)")
+        toggle.setToolTip(tr("Command Menu (Ctrl+K)"))
         toggle.setAccessibleName("Abrir menu de comandos")
         toggle.clicked.connect(self.open_command_palette)
         top.addWidget(toggle)
         heading = QVBoxLayout()
         heading.setSpacing(4)
-        title = QLabel("Conversa")
+        title = QLabel(tr("Chat"))
         title.setObjectName("title")
         heading.addWidget(title)
-        self.connection_label = QLabel("Verificando conexão...")
+        self.connection_label = QLabel(tr("Checking connection..."))
         self.connection_label.setObjectName("connectionStatus")
         heading.addWidget(self.connection_label)
         top.addLayout(heading)
-        self.engineer_chat_badge = QLabel("ENGINEER · MARK 1.5B")
+        self.engineer_chat_badge = QLabel(tr("ENGINEER · MARK 1.5B"))
         self.engineer_chat_badge.setObjectName("engineerBadge")
         self.engineer_chat_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.engineer_chat_badge.hide()
@@ -280,28 +281,28 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         self.conversation_selector = QComboBox()
         self.conversation_selector.setObjectName("chatSelector")
         self.conversation_selector.setMinimumWidth(190)
-        self.conversation_selector.setToolTip("Conversas separadas por perfil; memórias salvas continuam compartilhadas")
+        self.conversation_selector.setToolTip(tr("Conversations separated by profile; saved memories stay shared"))
         self.conversation_selector.currentIndexChanged.connect(self._select_conversation_from_header)
         self.conversation_selector.hide()
         top.addWidget(self.conversation_selector)
-        self.new_conversation_button = QPushButton("Nova conversa")
+        self.new_conversation_button = QPushButton(tr("New chat"))
         self.new_conversation_button.setObjectName("headerAction")
         self.new_conversation_button.clicked.connect(self._create_specialized_conversation)
         self.new_conversation_button.hide()
         top.addWidget(self.new_conversation_button)
         top.addStretch()
-        call_shortcut = QPushButton("Chamada")
+        call_shortcut = QPushButton(tr("Call"))
         call_shortcut.setObjectName("headerAction")
         call_shortcut.setIcon(_mark_icon("call"))
         call_shortcut.setIconSize(QSize(17, 17))
-        call_shortcut.setToolTip("Abrir chamada dentro do app")
+        call_shortcut.setToolTip(tr("Open the call inside the app"))
         call_shortcut.clicked.connect(self.open_call)
         top.addWidget(call_shortcut)
         self.refresh_button = QPushButton()
         self.refresh_button.setObjectName("iconButton")
         self.refresh_button.setIcon(_mark_icon("refresh"))
         self.refresh_button.setIconSize(QSize(18, 18))
-        self.refresh_button.setToolTip("Atualizar estado do MARK")
+        self.refresh_button.setToolTip(tr("Refresh MARK status"))
         self.refresh_button.clicked.connect(self.refresh_status)
         top.addWidget(self.refresh_button)
         main.addLayout(top)
@@ -314,7 +315,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         feedback_layout = QVBoxLayout(self.engineer_work_feedback)
         feedback_layout.setContentsMargins(12, 6, 12, 6)
         feedback_layout.setSpacing(4)
-        self.engineer_work_label = QLabel("Engineer está analisando sua solicitação...")
+        self.engineer_work_label = QLabel(tr("Engineer is analysing your request..."))
         self.engineer_work_label.setObjectName("engineerWorkLabel")
         feedback_layout.addWidget(self.engineer_work_label)
         self.engineer_work_bar = QProgressBar()
@@ -340,15 +341,15 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         empty = QVBoxLayout(self.empty_state)
         empty.setSpacing(10)
         empty.addStretch(2)
-        eyebrow = QLabel("UM ASSISTENTE. TODOS OS SEUS DISPOSITIVOS.")
+        eyebrow = QLabel(tr("ONE ASSISTANT. ALL YOUR DEVICES."))
         eyebrow.setObjectName("welcomeEyebrow")
         eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty.addWidget(eyebrow)
-        welcome = QLabel("O que vamos fazer hoje?")
+        welcome = QLabel(tr("What shall we do today?"))
         welcome.setObjectName("welcomeTitle")
         welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty.addWidget(welcome)
-        hint = QLabel("Converse, planeje ou explore uma ideia com o MARK.")
+        hint = QLabel(tr("Chat, plan, or explore an idea with MARK."))
         hint.setObjectName("welcomeHint")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty.addWidget(hint)
@@ -395,7 +396,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         compose.setSpacing(8)
         self.input = Composer()
         self.input.setObjectName("messageInput")
-        self.input.setPlaceholderText("Escreva para o MARK ou arraste um arquivo aqui...")
+        self.input.setPlaceholderText(tr("Write to MARK or drop a file here..."))
         self.input.setFixedHeight(58)
         self.input.send_requested.connect(self.send_message)
         self.input.files_dropped.connect(self._add_attachment_paths)
@@ -408,17 +409,17 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         compose.addWidget(self.attachment_list)
         actions = QHBoxLayout()
         actions.setSpacing(6)
-        self.attach_button = QPushButton("Anexar")
+        self.attach_button = QPushButton(tr("Attach"))
         self.attach_button.setObjectName("attachButton")
         self.attach_button.setIcon(_mark_icon("attach"))
         self.attach_button.setIconSize(QSize(17, 17))
-        self.attach_button.setToolTip("Imagens, PDFs, documentos DOCX e arquivos de texto")
+        self.attach_button.setToolTip(tr("Images, PDFs, DOCX documents and text files"))
         self.attach_button.clicked.connect(self.add_attachments)
         actions.addWidget(self.attach_button)
         self.remove_attachment_button = QPushButton()
         self.remove_attachment_button.setObjectName("attachButton")
         self.remove_attachment_button.setIcon(_mark_icon("trash"))
-        self.remove_attachment_button.setToolTip("Remover o arquivo selecionado")
+        self.remove_attachment_button.setToolTip(tr("Remove selected file"))
         self.remove_attachment_button.setAccessibleName("Remover o arquivo selecionado")
         self.remove_attachment_button.setDisabled(True)
         self.remove_attachment_button.hide()
@@ -435,9 +436,9 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         actions.addWidget(self.model_selector)
         self.reasoning_selector = QComboBox()
         self.reasoning_selector.setObjectName("reasoningSelector")
-        self.reasoning_selector.addItem("Raciocínio Instantâneo", "instant")
-        self.reasoning_selector.addItem("Raciocínio Balanceado", "medium")
-        self.reasoning_selector.addItem("Raciocínio Profundo", "high")
+        self.reasoning_selector.addItem(tr("Instant reasoning"), "instant")
+        self.reasoning_selector.addItem(tr("Balanced reasoning"), "medium")
+        self.reasoning_selector.addItem(tr("Deep reasoning"), "high")
         from .config import get_reasoning_level, set_reasoning_level
         _saved_idx = self.reasoning_selector.findData(get_reasoning_level())
         self.reasoning_selector.setCurrentIndex(_saved_idx if _saved_idx >= 0 else 1)
@@ -446,9 +447,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         )
         self.reasoning_selector.setAccessibleName("Nível de resposta e raciocínio")
         self.reasoning_selector.setToolTip(
-            "Instantâneo: sem raciocínio estendido, contexto 4k e até 512 tokens. "
-            "Balanceado: contexto 6k e até 2048 tokens. "
-            "Profundo: contexto 8k e até 4096 tokens, com explicação mais aprofundada."
+            tr("Instant: no extended reasoning, 4k context and up to 512 tokens. Balanced: 6k context and up to 2048 tokens. Deep: 8k context and up to 4096 tokens, with a deeper explanation.")
         )
         self.model_selector.currentIndexChanged.connect(
             lambda _index: self.reasoning_selector.setEnabled(
@@ -461,7 +460,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         self.send_button.setObjectName("sendButton")
         self.send_button.setIcon(_mark_icon("send"))
         self.send_button.setIconSize(QSize(18, 18))
-        self.send_button.setToolTip("Enviar mensagem")
+        self.send_button.setToolTip(tr("Send message"))
         self.send_button.setAccessibleName("Enviar mensagem")
         self.send_button.setStyleSheet(
             "QPushButton#sendButton { background: #00D8F6; color: #121417; border-radius: 16px; border: none; padding: 4px; min-width: 36px; max-width: 36px; min-height: 32px; max-height: 32px; font-weight: 500; } "
@@ -472,7 +471,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         compose.addLayout(actions)
 
         # Dica de envio em linha própria sem corte de texto
-        self.composer_hint = QLabel("Enter envia · Shift+Enter nova linha")
+        self.composer_hint = QLabel(tr("Enter sends · Shift+Enter for a new line"))
         self.composer_hint.setObjectName("composerHint")
         self.composer_hint.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 400;")
         hint_row = QHBoxLayout()
@@ -490,9 +489,9 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         telemetry_layout.setContentsMargins(0, 4, 0, 0)
         telemetry_layout.setSpacing(14)
 
-        self.cmd_palette_btn = QPushButton("⌘K Comandos")
+        self.cmd_palette_btn = QPushButton(tr("⌘K Commands"))
         self.cmd_palette_btn.setObjectName("cmdPaletteButton")
-        self.cmd_palette_btn.setToolTip("Abrir Menu de Comandos (Ctrl+K / Cmd+K)")
+        self.cmd_palette_btn.setToolTip(tr("Open command menu (Ctrl+K / Cmd+K)"))
         self.cmd_palette_btn.clicked.connect(self.open_command_palette)
         telemetry_layout.addWidget(self.cmd_palette_btn)
 
@@ -505,7 +504,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         bwrap_text = "ATIVO" if bwrap_ok else "INATIVO"
         self.bwrap_status_label.setText(f"<span style='color:{bwrap_color};'>●</span> BWRAP: {bwrap_text}")
         self.bwrap_status_label.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;")
-        self.bwrap_status_label.setToolTip("Clique para ver detalhes de segurança BWRAP")
+        self.bwrap_status_label.setToolTip(tr("Click to see BWRAP security details"))
         self.bwrap_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.bwrap_status_label.mousePressEvent = lambda _ev: self.show_technical_details("bwrap")
         telemetry_layout.addWidget(self.bwrap_status_label)
@@ -517,7 +516,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         mtls_text = "ATIVO" if has_ts else "INATIVO"
         self.mtls_status_label.setText(f"<span style='color:{mtls_color};'>●</span> mTLS: {mtls_text}")
         self.mtls_status_label.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;")
-        self.mtls_status_label.setToolTip("Clique para ver detalhes de segurança mTLS")
+        self.mtls_status_label.setToolTip(tr("Click to see mTLS security details"))
         self.mtls_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.mtls_status_label.mousePressEvent = lambda _ev: self.show_technical_details("mtls")
         telemetry_layout.addWidget(self.mtls_status_label)
@@ -525,13 +524,13 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         self.ctx_status_label = QLabel(f"CTX: {get_local_inference_params().get('num_ctx', 32768) // 1024}K")
         self.ctx_status_label.setObjectName("ctxStatusLabel")
         self.ctx_status_label.setStyleSheet("color: #8E95A0; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;")
-        self.ctx_status_label.setToolTip("Clique para ver detalhes de janela de contexto")
+        self.ctx_status_label.setToolTip(tr("Click to see context window details"))
         self.ctx_status_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ctx_status_label.mousePressEvent = lambda _ev: self.show_technical_details("ctx")
         telemetry_layout.addWidget(self.ctx_status_label)
 
         main.addWidget(self.telemetry_box)
-        footer = QLabel("PC, celular e voz · uma memória compartilhada")
+        footer = QLabel(tr("PC, phone and voice · one shared memory"))
         footer.setObjectName("footer")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main.addWidget(footer)
@@ -629,7 +628,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         if self.evolution_status_loading:
             return
         self.evolution_status_loading = True
-        self.evolution_status.setText("Atualizando estado da rotina...")
+        self.evolution_status.setText(tr("Refreshing routine status..."))
 
         def inspect_state():
             env = os.environ.copy()
@@ -662,7 +661,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
 
         def failed(_message):
             self.evolution_status_loading = False
-            self.evolution_status.setText("Estado da rotina indisponível; abra o painel para consultar os detalhes.")
+            self.evolution_status.setText(tr("Routine status unavailable; open the panel to see the details."))
 
         self._task(inspect_state, show_state, failed)
 
@@ -670,7 +669,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         if self.engineer_status_loading:
             return
         self.engineer_status_loading = True
-        self.engineer_model_status.setText("Verificando o modelo configurado no Ollama...")
+        self.engineer_model_status.setText(tr("Checking the model configured in Ollama..."))
 
         def inspect_local_state():
             from .config import load_config
@@ -717,7 +716,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         def failed_local_state(_message):
             self.engineer_status_loading = False
             self.engineer_model_indicator.setText("ERRO")
-            self.engineer_model_status.setText("Não consegui atualizar o estado local do Engineer.")
+            self.engineer_model_status.setText(tr("I could not refresh the local Engineer status."))
             self.engineer_tasks.set_unavailable()
 
         self._task(inspect_local_state, show_local_state, failed_local_state)
@@ -1108,7 +1107,7 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
         button = self.sender()
         if isinstance(button, QPushButton):
             button.setDisabled(True)
-            button.setText("Testando câmera...")
+            button.setText(tr("Testing camera..."))
 
         def check():
             result = subprocess.run([str(ROOT / "scripts/test_camera.sh")], capture_output=True, text=True, timeout=35)
@@ -1118,12 +1117,12 @@ class MarkWindow(HistoryMixin, WorkerMixin, NavigationMixin, ChatMixin, Professo
 
         def done(message):
             button.setDisabled(False)
-            button.setText("Testar câmera")
+            button.setText(tr("Test camera"))
             QMessageBox.information(self, "Teste da câmera", message)
 
         def failed(message):
             button.setDisabled(False)
-            button.setText("Testar câmera")
+            button.setText(tr("Test camera"))
             QMessageBox.warning(self, "Teste da câmera", message)
 
         self._task(check, done, failed)

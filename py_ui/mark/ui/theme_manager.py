@@ -245,21 +245,45 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
     border: none;
 }}
 
-/* Mensagens (Soft Minimal Tech) */
+/* Mensagens (Soft Minimal Tech): estilo unico por objectName, sem QSS por bolha */
 #userBubble {{
     background: {t.BG_USER_BUBBLE};
     border: none;
     border-radius: 8px;
-    padding: 10px 14px;
-    margin: 4px 0px 4px 48px;
+    padding: 8px 14px;
+    margin: 0px 0px 0px 48px;
 }}
 
 #assistantBubble {{
     background: {t.BG_CANVAS};
     border: none;
     border-radius: 0px;
-    padding: 10px 0px;
-    margin: 4px 48px 4px 0px;
+    padding: 6px 0px;
+    margin: 0px;
+}}
+
+#userBubble QLabel#messageSender, #assistantBubble QLabel#messageSender {{
+    color: {t.TEXT_SECONDARY};
+    font-family: {t.FONT_FAMILY};
+    font-size: 10px;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    padding: 0px;
+    margin: 0px;
+}}
+
+#userBubble QLabel#messageBody, #assistantBubble QLabel#messageBody {{
+    color: {t.TEXT_PRIMARY};
+    font-family: {t.FONT_FAMILY};
+    font-size: 13px;
+    font-weight: 400;
+    border: none;
+    background: transparent;
+    selection-background-color: {t.ACCENT_CYAN};
+    selection-color: {t.BG_CANVAS};
+    margin: 0px;
+    padding: 0px;
 }}
 
 #errorCard {{

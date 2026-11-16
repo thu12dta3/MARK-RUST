@@ -12,13 +12,14 @@ from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLa
 from .desktop_dialogs import WorkerDialog
 from .desktop_task import Task
 from .desktop_helpers import _request, _voice_request
+from .ui.i18n import tr
 
 
 class CallDialog(WorkerDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Chamada com MARK")
+        self.setWindowTitle(tr("Call with MARK"))
         self.setMinimumSize(390, 330)
         self.active = False
         self.closing_when_idle = False
@@ -42,31 +43,31 @@ class CallDialog(WorkerDialog):
         self.elapsed_frames = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
-        title = QLabel("◉  MARK")
+        title = QLabel(tr("MARK"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("color: #bdf5f6; font-size: 29px; font-weight: bold;")
         layout.addWidget(title)
-        self.state = QLabel("Pronto para conversar")
+        self.state = QLabel(tr("Ready to talk"))
         self.state.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.state.setWordWrap(True)
         self.state.setStyleSheet("font-size: 19px; color: #e6edf3;")
         layout.addWidget(self.state, 1)
-        self.detail = QLabel("Fale normalmente. O MARK responde pelo fone ou alto-falante do PC.")
+        self.detail = QLabel(tr("Speak normally. MARK answers through the headset or the PC speakers."))
         self.detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.detail.setWordWrap(True)
         self.detail.setStyleSheet("color: #91a4b4;")
         layout.addWidget(self.detail)
         output_row = QHBoxLayout()
-        output_row.addWidget(QLabel("Saída de áudio"))
+        output_row.addWidget(QLabel(tr("Audio output")))
         self.output_selector = QComboBox()
-        self.output_selector.setToolTip("Escolha onde o MARK reproduz a resposta falada")
+        self.output_selector.setToolTip(tr("Choose where MARK plays the spoken answer"))
         self.output_selector.currentIndexChanged.connect(self._select_audio_output)
         output_row.addWidget(self.output_selector, 1)
         layout.addLayout(output_row)
-        self.toggle = QPushButton("Iniciar chamada")
+        self.toggle = QPushButton(tr("Start call"))
         self.toggle.clicked.connect(self.toggle_call)
         layout.addWidget(self.toggle)
-        self.interrupt = QPushButton("Interromper resposta e falar")
+        self.interrupt = QPushButton(tr("Interrupt the answer and speak"))
         self.interrupt.clicked.connect(self._interrupt_playback)
         self.interrupt.hide()
         layout.addWidget(self.interrupt)
@@ -94,7 +95,7 @@ class CallDialog(WorkerDialog):
         if index >= 0:
             self._select_audio_output(index)
         else:
-            self.output_selector.addItem("Nenhuma saída disponível")
+            self.output_selector.addItem(tr("No output available"))
 
     def _select_audio_output(self, index):
         device_id = self.output_selector.itemData(index) if index >= 0 else None
@@ -114,7 +115,7 @@ class CallDialog(WorkerDialog):
             return
         self.interrupt.hide()
         self.audio_buffer = None
-        self.state.setText("Falha ao reproduzir a resposta")
+        self.state.setText(tr("Could not play the answer"))
         detail = message.strip() if message and message.strip() else "O dispositivo de saída recusou o áudio."
         self.detail.setText(f"{detail} Escolha outra saída de áudio e tente falar novamente.")
         if self.active:
@@ -125,9 +126,9 @@ class CallDialog(WorkerDialog):
             self._stop_call()
         else:
             self.active = True
-            self.toggle.setText("Encerrar chamada")
-            self.state.setText("Conferindo conexão com o MARK...")
-            self.detail.setText("O microfone só será ativado depois que o servidor responder.")
+            self.toggle.setText(tr("End call"))
+            self.state.setText(tr("Checking the connection to MARK..."))
+            self.detail.setText(tr("The microphone turns on only after the server answers."))
             self.worker = Task(lambda: _request("/health", timeout=8), self)
             self.worker.completed.connect(self._connection_ready)
             self.worker.failed.connect(self._connection_failed)
@@ -159,8 +160,8 @@ class CallDialog(WorkerDialog):
             self.close()
             return
         self.active = False
-        self.toggle.setText("Tentar chamada novamente")
-        self.state.setText("Chat indisponível")
+        self.toggle.setText(tr("Try the call again"))
+        self.state.setText(tr("Chat unavailable"))
         self.detail.setText("Verifique a conexão com o servidor MARK e tente novamente. " + str(message))
 
     def _listen(self):
@@ -186,8 +187,8 @@ class CallDialog(WorkerDialog):
             self._stop_call("Não consegui abrir o microfone do PC.")
             return
         self.microphone.readyRead.connect(self._audio_ready)
-        self.state.setText("Ouvindo...")
-        self.detail.setText("Fale naturalmente; o MARK escuta até você fazer uma pausa.")
+        self.state.setText(tr("Listening..."))
+        self.detail.setText(tr("Speak naturally; MARK listens until you pause."))
 
     def _audio_ready(self):
         if not self.active or self.microphone is None or self.worker is not None:
@@ -227,8 +228,8 @@ class CallDialog(WorkerDialog):
 
     def _send_turn(self, pcm: bytes):
         self._stop_microphone()
-        self.state.setText("MARK está pensando...")
-        self.detail.setText("Aguarde a resposta da conversa.")
+        self.state.setText(tr("MARK is thinking..."))
+        self.detail.setText(tr("Wait for the conversation answer."))
         self.worker = Task(lambda: _voice_request(pcm), self)
         self.worker.completed.connect(self._received)
         self.worker.failed.connect(self._failed)
@@ -247,8 +248,8 @@ class CallDialog(WorkerDialog):
         self.audio_buffer.setData(wav)
         self.audio_buffer.open(QIODevice.OpenModeFlag.ReadOnly)
         self.player.setSourceDevice(self.audio_buffer, QUrl("file:///mark-answer.wav"))
-        self.state.setText("MARK está falando...")
-        self.detail.setText("Você pode interromper para voltar a falar.")
+        self.state.setText(tr("MARK is speaking..."))
+        self.detail.setText(tr("You can interrupt to speak again."))
         self.interrupt.show()
         self.player.play()
 
@@ -258,7 +259,7 @@ class CallDialog(WorkerDialog):
         if self.closing_when_idle:
             self.close()
             return
-        self.state.setText("Não consegui concluir a fala")
+        self.state.setText(tr("I could not finish speaking"))
         self.detail.setText(message)
         if self.active:
             QTimer.singleShot(1800, self._listen)
@@ -286,14 +287,14 @@ class CallDialog(WorkerDialog):
         self.player.stop()
         self.interrupt.hide()
         self.audio_buffer = None
-        self.toggle.setText("Iniciar chamada")
+        self.toggle.setText(tr("Start call"))
         self.state.setText(message)
 
     def closeEvent(self, event):
         self._stop_call()
         if self.worker is not None:
             self.closing_when_idle = True
-            self.state.setText("Encerrando a chamada...")
+            self.state.setText(tr("Ending the call..."))
             event.ignore()
             return
         event.accept()

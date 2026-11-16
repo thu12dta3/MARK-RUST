@@ -13,6 +13,7 @@ LANGS = ("en", "pt-BR", "zh", "hi", "es", "fr", "ar")
 SAME_BY_DESIGN = {
     "Geral", "Engenheiro", "Professor", "Vision", "Mark", "MARK", "Configurações",
     "Plugins...", "E-mail · Tuta", "Português", "Offline", "MARK · Offline", "DeepSeek R1 8B",
+    "PROFESSOR · ASTRA",
 }
 FORBIDDEN_TOKENS = ("herramenta", "None")
 TECHNICAL = ("Flash Attention", "Load", "Seed", "Host", "Status", "Porta", "Local", "Graph", "API", "GPU", "CPU", "RoPE", "KV", "BWRAP", "mTLS", "CTX", "Plugins", "DeepSeek")

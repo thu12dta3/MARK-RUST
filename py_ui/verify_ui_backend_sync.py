@@ -100,7 +100,11 @@ def main() -> int:
         if widget is not None:
             window.stacked_widget.setCurrentWidget(widget)
             QTest.qWait(250)
-    window.open_command_palette()
+    # open_command_palette() entra em QDialog.exec() e bloquearia o harness:
+    # a palette real e populada e exibida sem loop modal.
+    window.command_palette.search_input.clear()
+    window.command_palette.populate()
+    window.command_palette.show()
     QTest.qWait(600)
     from PyQt6.QtWidgets import QListWidget
 

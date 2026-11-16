@@ -791,6 +791,22 @@ class MainWindow(
         path = None
     return resolve_engine(model_id, local_path=path, scanner_source=source)
 
+  def _on_models_discovered(self, result: object) -> None:
+    """Persiste os modelos descobertos via API e repovoa o seletor do chat."""
+    from ..config import load_config, save_config
+
+    providers = (result or {}).get("providers") if isinstance(result, dict) else None
+    ids = sorted({str(item) for items in (providers or {}).values() for item in items})
+    if not ids:
+      return
+    cfg = load_config() or {}
+    cfg["discovered_models"] = ids
+    save_config(cfg)
+    selector = getattr(self, "model_selector", None)
+    if selector is not None and hasattr(selector, "populate_from_config"):
+      selector.populate_from_config()
+    self._sync_engine_for_model(ids[0])
+
   def _prewarm_local_server(self) -> None:
     """Sobe o mark-server em background logo apos o primeiro paint.
 
@@ -885,6 +901,8 @@ class MainWindow(
     """`min(ctx do usuario, teto do modelo)`: o rodape nunca mente sobre o CTX."""
     from ..config import get_local_inference_params
 
+    self._ctx_ceiling = ceiling
+
     user_ctx = int((get_local_inference_params() or {}).get("num_ctx") or 0) or None
     if ceiling is None:
       return user_ctx
@@ -892,8 +910,53 @@ class MainWindow(
       return int(ceiling)
     return min(int(user_ctx), int(ceiling))
 
+  def _sync_ctx_meter(self) -> None:
+      """Atualiza a barra visual de CTX com o uso estimado da conversa ativa."""
+      meter = self._ctx_meter()
+      limit = self._effective_ctx(getattr(self, "_ctx_ceiling", None)) or 0
+      meter.set_usage(self._conversation_token_estimate(), int(limit))
+
+  def _ctx_meter(self):
+      """Cria (uma vez) o medidor visual e esconde o rotulo de texto antigo."""
+      meter = getattr(self, "_ctx_meter_widget", None)
+      if meter is not None:
+          return meter
+      from .widgets import CtxMeterWidget
+
+      meter = CtxMeterWidget(self)
+      label = getattr(self, "ctx_status_label", None)
+      if label is not None:
+          parent = label.parentWidget()
+          layout = parent.layout() if parent is not None else None
+          if layout is not None:
+              index = layout.indexOf(label)
+              layout.insertWidget(index if index >= 0 else layout.count(), meter)
+              label.setVisible(False)
+      self._ctx_meter_widget = meter
+      return meter
+
+  def _conversation_token_estimate(self) -> int:
+      """Estimativa de tokens da conversa ativa (1 token ~ 4 caracteres)."""
+      conv = str(getattr(self, "current_conversation_id", "") or "")
+      if not conv:
+          return 0
+      try:
+          db = self._conversation_db()
+          try:
+              row = db.execute(
+                  "SELECT COALESCE(SUM(LENGTH(content)),0) FROM conversation_messages "
+                  "WHERE conversation_id=?",
+                  (conv,),
+              ).fetchone()
+          finally:
+              db.close()
+      except (RuntimeError, ValueError, OSError):
+          return 0
+      return int((int(row[0]) if row else 0) / 4)
+
   def _update_ctx_label(self) -> None:
       """Atualiza o CTX com o ultimo scan conhecido, sem bloquear a interface."""
+      self._sync_ctx_meter()
       if not hasattr(self, "ctx_status_label"):
           return
       from .model_scanner import format_ctx, scan_model
@@ -1917,6 +1980,8 @@ class MainWindow(
         self.settings_widget.reload_inference_engine_requested.connect(
           lambda _params: self._update_ctx_label()
         )
+      if hasattr(self.settings_widget, "models_discovered"):
+        self.settings_widget.models_discovered.connect(self._on_models_discovered)
     except Exception as exc:
       logger.warning(f"Não foi possível inicializar LocalInferenceManager: {exc}")
     return self.settings_widget

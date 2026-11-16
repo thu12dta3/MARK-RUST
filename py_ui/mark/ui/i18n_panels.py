@@ -249,6 +249,71 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
         "{engine} a analysé {count} fichiers · {threats} menace(s) · lecture seule, rien n'a été supprimé",
         "فحص {engine} عدد {count} ملفًا · {threats} تهديد · قراءة فقط، لم يُحذف شيء",
     ),
+    "MARK plugins": (
+        "MARK plugins", "Plugins do MARK", "MARK 插件", "MARK प्लगइन",
+        "Plugins de MARK", "Plugins de MARK", "إضافات MARK",
+    ),
+    "Choose the integrations MARK may use. Each card lists the permissions it receives.": (
+        "Choose the integrations MARK may use. Each card lists the permissions it receives.",
+        "Escolha as integracoes que o MARK pode usar. Cada cartao lista as permissoes recebidas.",
+        "选择 MARK 可使用的集成。每张卡片列出它获得的权限。",
+        "चुनें कि MARK कौन से एकीकरण उपयोग कर सकता है। प्रत्येक कार्ड उसकी अनुमतियाँ दिखाता है।",
+        "Elige las integraciones que MARK puede usar. Cada tarjeta lista los permisos que recibe.",
+        "Choisissez les integrations que MARK peut utiliser. Chaque carte liste les permissions accordees.",
+        "اختر التكاملات التي يستطيع MARK استخدامها. تعرض كل بطاقة الأذونات الممنوحة.",
+    ),
+    "Enabled": (
+        "Enabled", "Ativo", "已启用", "सक्षम", "Activado", "Active", "مفعّل",
+    ),
+    "Enable plugin {name}": (
+        "Enable plugin {name}", "Ativar plugin {name}", "启用插件 {name}",
+        "प्लगइन {name} सक्षम करें", "Activar plugin {name}", "Activer le plugin {name}",
+        "تفعيل الإضافة {name}",
+    ),
+    "Permissions: {list}": (
+        "Permissions: {list}", "Permissoes: {list}", "权限：{list}",
+        "अनुमतियाँ: {list}", "Permisos: {list}", "Permissions : {list}", "الأذونات: {list}",
+    ),
+    "External MCP servers ({count})": (
+        "External MCP servers ({count})", "Servidores MCP externos ({count})",
+        "外部 MCP 服务器（{count}）", "बाहरी MCP सर्वर ({count})",
+        "Servidores MCP externos ({count})", "Serveurs MCP externes ({count})",
+        "خوادم MCP الخارجية ({count})",
+    ),
+    "No MCP server configured. Add one under mcp_servers in the MARK config.": (
+        "No MCP server configured. Add one under mcp_servers in the MARK config.",
+        "Nenhum servidor MCP configurado. Adicione um em mcp_servers no config do MARK.",
+        "未配置 MCP 服务器。请在 MARK 配置的 mcp_servers 下添加。",
+        "कोई MCP सर्वर कॉन्फ़िगर नहीं है। MARK कॉन्फ़िग के mcp_servers में जोड़ें।",
+        "No hay ningun servidor MCP configurado. Anade uno en mcp_servers del config de MARK.",
+        "Aucun serveur MCP configure. Ajoutez-en un sous mcp_servers dans la config de MARK.",
+        "لا يوجد خادم MCP مهيأ. أضف واحدًا تحت mcp_servers في إعداد MARK.",
+    ),
+    "Enable MCP server {name}": (
+        "Enable MCP server {name}", "Ativar servidor MCP {name}", "启用 MCP 服务器 {name}",
+        "MCP सर्वर {name} सक्षम करें", "Activar servidor MCP {name}",
+        "Activer le serveur MCP {name}", "تفعيل خادم MCP {name}",
+    ),
+    "Enabled plugins and MCP servers are exposed to the Engineer sandbox tool registry.": (
+        "Enabled plugins and MCP servers are exposed to the Engineer sandbox tool registry.",
+        "Plugins e servidores MCP ativos sao expostos ao registro de ferramentas do sandbox do Engineer.",
+        "已启用的插件和 MCP 服务器会注册到工程师沙箱的工具列表。",
+        "सक्षम प्लगइन और MCP सर्वर इंजीनियर सैंडबॉक्स के टूल रजिस्ट्री में उपलब्ध होते हैं।",
+        "Los plugins y servidores MCP activados se exponen al registro de herramientas del sandbox del Ingeniero.",
+        "Les plugins et serveurs MCP actives sont exposes au registre d'outils du bac a sable Ingenieur.",
+        "تُتاح الإضافات وخوادم MCP المفعّلة لسجل أدوات بيئة عزل المهندس.",
+    ),
+    "Done": (
+        "Done", "Concluido", "完成", "पूर्ण", "Hecho", "Termine", "تم",
+    ),
+    "Thinking...": (
+        "Thinking...", "Pensando...", "正在思考...", "सोच रहा है...",
+        "Pensando...", "Reflexion...", "يفكر...",
+    ),
+    "Sync Models": (
+        "Sync Models", "Sincronizar modelos", "同步模型", "मॉडल सिंक करें",
+        "Sincronizar modelos", "Synchroniser les modeles", "مزامنة النماذج",
+    ),
     "{files} files · {size} · VRAM budget {vram} GiB": (
         "{files} files · {size} · VRAM budget {vram} GiB",
         "{files} arquivos · {size} · orçamento de VRAM {vram} GiB",

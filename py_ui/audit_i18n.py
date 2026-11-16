@@ -152,8 +152,28 @@ def main() -> int:
     for item in hardcoded:
         by_file[item.split(":", 1)[0]] = by_file.get(item.split(":", 1)[0], 0) + 1
 
+    active_files = (
+        "mark/desktop_plugins.py",
+        "mark/desktop_call_dialog.py",
+        "mark/ui/main_window.py",
+        "mark/ui/widgets.py",
+        "mark/desktop_navigation.py",
+        "mark/desktop.py",
+        "mark/ui/hf_splitview.py",
+    )
+    dormant_files = ("mark/desktop_vision.py", "mark/desktop_evolution.py")
+    active = [item for item in hardcoded if item.split(":", 1)[0] in active_files]
+    dormant = [item for item in hardcoded if item.split(":", 1)[0] in dormant_files]
+    others = len(hardcoded) - len(active) - len(dormant)
     print(f"arquivos: {len(files)} | chaves no catalogo: {len(catalog)}")
     print(f"strings visiveis sem tr(): {len(hardcoded)}")
+    print(f"  telas ativas: {len(active)} | modulos dormentes: {len(dormant)} | outros: {others}")
+    active_by_file: dict[str, int] = {}
+    for item in active:
+        name = item.split(":", 1)[0]
+        active_by_file[name] = active_by_file.get(name, 0) + 1
+    for name, count in sorted(active_by_file.items(), key=lambda kv: -kv[1]):
+        print(f"    {count:4}  {name}")
     print(f"tr() com chave fora do catalogo: {len(missing)}")
     print(f"chaves de catalogo ainda em portugues: {len(portuguese_keys)}")
     print("\n-- por arquivo (top 12) --")

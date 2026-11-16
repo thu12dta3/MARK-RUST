@@ -314,6 +314,153 @@ class ErrorCardWidget(QFrame):
     layout.addLayout(actions_layout)
 
 
+class CtxMeterWidget(QFrame):
+  """Medidor de contexto: mini barra + `usado / limite (pct%)` no tema dark."""
+
+  AMBER = "#D29922"
+  RED = "#F85149"
+  CYAN = "#00D8F6"
+  TRACK = "#121417"
+  BORDER = "#2D333B"
+
+  def __init__(self, parent=None):
+    super().__init__(parent)
+    self.setObjectName("ctxMeter")
+    self.setStyleSheet(
+      "QFrame#ctxMeter { background: #121417; border: 1px solid #2D333B;"
+      " border-radius: 6px; }"
+    )
+    layout = QHBoxLayout(self)
+    layout.setContentsMargins(8, 2, 8, 2)
+    layout.setSpacing(8)
+    self.bar = _CtxBar(self)
+    self.bar.setFixedSize(52, 6)
+    self.text_label = QLabel("CTX: -")
+    self.text_label.setObjectName("ctxMeterText")
+    self.text_label.setStyleSheet("color: #8B949E; font-size: 11px;")
+    layout.addWidget(self.bar)
+    layout.addWidget(self.text_label)
+    self._used = 0
+    self._limit = 0
+
+  def set_usage(self, used: int, limit: int) -> None:
+    """Atualiza a barra e o texto; zero significa desconhecido."""
+    from .model_scanner import format_ctx
+
+    used = max(0, int(used or 0))
+    limit = max(0, int(limit or 0))
+    self._used, self._limit = used, limit
+    if limit <= 0:
+      self.bar.set_ratio(0.0, self.CYAN)
+      self.text_label.setText("CTX: -")
+      self.text_label.setStyleSheet("color: #8B949E; font-size: 11px;")
+      return
+    ratio = min(1.0, used / float(limit))
+    color = self.CYAN if ratio <= 0.75 else (self.AMBER if ratio <= 0.90 else self.RED)
+    self.bar.set_ratio(ratio, color)
+    label_used = format_ctx(used).replace("CTX: ", "")
+    label_limit = format_ctx(limit).replace("CTX: ", "")
+    self.text_label.setText(f"{label_used} / {label_limit} ({int(ratio * 100)}%)")
+    self.text_label.setStyleSheet(f"color: {color}; font-size: 11px;")
+    self.setToolTip(f"tokens usados={used} limite efetivo={limit}")
+
+  def usage(self) -> tuple[int, int, str]:
+    """(usado, limite, cor) para inspecao em teste."""
+    ratio = 0.0 if self._limit <= 0 else min(1.0, self._used / float(self._limit))
+    color = self.CYAN if ratio <= 0.75 else (self.AMBER if ratio <= 0.90 else self.RED)
+    return self._used, self._limit, color
+
+
+class _CtxBar(QWidget):
+  """Barra de progresso pintada com QPainter (sem emoji, sem QProgressBar)."""
+
+  def __init__(self, parent=None):
+    super().__init__(parent)
+    self._ratio = 0.0
+    self._color = CtxMeterWidget.CYAN
+
+  def set_ratio(self, ratio: float, color: str) -> None:
+    self._ratio = max(0.0, min(1.0, float(ratio)))
+    self._color = color
+    self.update()
+
+  def paintEvent(self, _event) -> None:  # noqa: N802 (API Qt)
+    painter = QPainter(self)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(CtxMeterWidget.BORDER))
+    painter.drawRoundedRect(0, 0, self.width(), self.height(), 3, 3)
+    fill = int(self.width() * self._ratio)
+    if fill > 0:
+      painter.setBrush(QColor(self._color))
+      painter.drawRoundedRect(0, 0, fill, self.height(), 3, 3)
+    painter.end()
+
+
+class CollapsibleThinkingBox(QFrame):
+  """Caixa de pensamento retratil: so aparece quando ha conteudo real."""
+
+  def __init__(self, parent=None):
+    super().__init__(parent)
+    self.setObjectName("thinkingBox")
+    self.setStyleSheet(
+      "QFrame#thinkingBox { background: #121417; border: 1px solid #2D333B;"
+      " border-radius: 8px; }"
+      "QLabel#thinkingHeader { color: #00D8F6; font-size: 12px; font-weight: 600; }"
+      "QLabel#thinkingBody { color: #8B949E; font-size: 12px; }"
+    )
+    outer = QVBoxLayout(self)
+    outer.setContentsMargins(10, 6, 10, 6)
+    outer.setSpacing(4)
+    self.header_button = QToolButton(self)
+    self.header_button.setObjectName("thinkingHeaderButton")
+    self.header_button.setAutoRaise(True)
+    self.header_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    self.header_button.setText(tr("Thinking..."))
+    self.header_button.clicked.connect(self.toggle)
+    outer.addWidget(self.header_button, 0, Qt.AlignmentFlag.AlignLeft)
+    self.body = QLabel("", self)
+    self.body.setObjectName("thinkingBody")
+    self.body.setWordWrap(True)
+    self.body.setStyleSheet(
+      "border-left: 2px solid #2D333B; padding-left: 8px; color: #8B949E;"
+    )
+    outer.addWidget(self.body)
+    self.body.setVisible(False)
+    self._expanded = False
+    self._text = ""
+    self._started = _now()
+    self.setVisible(False)
+
+  def append_reasoning(self, chunk: str) -> None:
+    """Acumula raciocinio real vindo do stream; nada e inventado."""
+    if not chunk:
+      return
+    self._text += chunk
+    self.body.setText(self._text.strip())
+    self.setVisible(True)
+    if self._expanded:
+      self.body.setVisible(True)
+
+  def finish(self) -> None:
+    """Fecha o pensamento com o tempo real decorrido."""
+    if not self._text.strip():
+      self.setVisible(False)
+      return
+    elapsed = max(1, int(_now() - self._started))
+    self.header_button.setText(tr("Thought for {secs}s").format(secs=elapsed))
+    self.setVisible(True)
+
+  def toggle(self) -> None:
+    self._expanded = not self._expanded
+    self.body.setVisible(self._expanded and bool(self._text.strip()))
+
+  def is_expanded(self) -> bool:
+    return self._expanded
+
+  def reasoning_text(self) -> str:
+    return self._text
+
 class ThinkingIndicatorWidget(QFrame):
   """Widget de feedback visual para estado de pensamento ("MARK está pensando...").
   
@@ -2427,3 +2574,9 @@ class MessageContentView(QWidget):
       self.prose_label.setText("")
       layout.addWidget(self.prose_label)
 
+
+def _now() -> float:
+  """Relogio monotonico local (evita depender do import global `time`)."""
+  import time
+
+  return time.monotonic()

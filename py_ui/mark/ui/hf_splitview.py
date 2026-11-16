@@ -508,23 +508,31 @@ class HFSplitView(QWidget):
         files=len(self._files), size=human_size(total_gib * 1024 ** 3), vram=f"{VRAM_GIB:.1f}"
       )
     )
-    tags = ", ".join(str(tag) for tag in (payload.get("tags") or [])[:6])
-    self.spec_label.setText(
-      f"ARCH: {payload.get('arch') or payload.get('pipeline') or 'n/a'} · "
-      f"FORMAT: {'GGUF' if any(f['name'].endswith('.gguf') for f in self._files) else 'Safetensors'} · "
-      f"TAGS: {tags or 'n/a'}"
+    chips = [f"ARCH: {payload.get('arch') or payload.get('pipeline') or 'n/a'}"]
+    chips.append(
+      "FORMAT: " + ("GGUF" if any(f["name"].endswith(".gguf") for f in self._files) else "Safetensors")
     )
+    for tag in (payload.get("tags") or [])[:6]:
+        chips.append(str(tag))
+    self.spec_label.setText(_chips_html(chips))
+    self.spec_label.setTextFormat(Qt.TextFormat.RichText)
     if not self._files:
       empty = QLabel(tr("This repository has no .gguf or .safetensors files."))
       empty.setStyleSheet("color: #8E95A0; font-size: 11px;")
       self.files_layout.addWidget(empty)
     for item in self._files[:24]:
       self.files_layout.addWidget(self._file_card(item))
-    self.readme.setHtml(
-      "<pre style='white-space:pre-wrap; color:#ABB2BF;'>"
-      + (payload.get("readme") or tr("(no README)"))[:4000].replace("<", "&lt;")
-      + "</pre>"
-    )
+    body = _strip_frontmatter(payload.get("readme") or "")
+    if body.strip():
+      # README real em Markdown no tema dark (.setMarkdown remove o HTML cru).
+      self.readme.document().setDefaultStyleSheet(
+        "body { color: #E6EDF3; background: #121417; }"
+        "h1, h2, h3 { color: #00D8F6; } code { color: #E6EDF3; background: #121417; }"
+        "pre { background: #121417; color: #E6EDF3; } a { color: #00D8F6; }"
+      )
+      self.readme.setMarkdown(body[:8000])
+    else:
+      self.readme.setPlainText(tr("(no README)"))
 
   def _file_card(self, item: dict[str, Any]) -> QWidget:
     card = QFrame()
@@ -597,3 +605,28 @@ class HFSplitView(QWidget):
       self.progress.setFormat(tr("saved") + f" · {path}")
     else:
       self.progress.setFormat(tr("failed") + f": {error}"[:120])
+
+
+def _strip_frontmatter(text: str) -> str:
+  """Remove o bloco YAML `--- ... ---` do topo do README."""
+  body = (text or "").lstrip()
+  if not body.startswith("---"):
+    return text or ""
+  lines = body.split("\n")
+  for index in range(1, len(lines)):
+    if lines[index].strip() in ("---", "..."):
+      return "\n".join(lines[index + 1 :]).lstrip()
+  return text or ""
+
+
+def _chips_html(chips: list[str]) -> str:
+  """Chips compactos no tema dark, sem emoji."""
+  parts = []
+  for chip in chips:
+    label = str(chip or "").replace("&", "&amp;").replace("<", "&lt;")
+    parts.append(
+      "<span style='background:#121417; color:#00D8F6; border:1px solid #2D333B;"
+      " border-radius:6px; padding:2px 6px; margin-right:6px; font-size:11px;'>"
+      f"{label}</span>"
+    )
+  return "".join(parts)

@@ -153,6 +153,7 @@ class SettingsWidget(QWidget):
     key_removed = pyqtSignal(str)
     memory_path_updated = pyqtSignal(str)
     reload_inference_engine_requested = pyqtSignal(dict)
+    models_discovered = pyqtSignal(object)
 
     COMMON_PROVIDERS = [
         "DEEPSEEK_API_KEY",
@@ -546,6 +547,12 @@ class SettingsWidget(QWidget):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         layout.addWidget(self.engine_status_value)
+
+        self.sync_models_button = QPushButton(tr("Sync Models"))
+        self.sync_models_button.setObjectName("syncModelsButton")
+        self.sync_models_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sync_models_button.clicked.connect(self.sync_models)
+        layout.addWidget(self.sync_models_button)
 
         self.reload_inference_button = QPushButton(tr("Reload to apply the changes"))
         self.reload_inference_button.setObjectName("reloadInferenceButton")
@@ -1453,6 +1460,22 @@ class SettingsWidget(QWidget):
             self.auto_seed.set_auto(params.get("seed") is None)
         if hasattr(self, "toggle_flash_attn"):
             self.toggle_flash_attn.setChecked(bool(params.get("flash_attn", True)))
+
+    def sync_models(self) -> dict[str, Any]:
+        """Consulta os provedores com chave no cofre e publica os modelos achados."""
+        from ..model_discovery import discover_configured_providers
+
+        result = discover_configured_providers()
+        providers = result.get("providers") or {}
+        count = sum(len(items) for items in providers.values())
+        if hasattr(self, "models_discovered"):
+            self.models_discovered.emit(result)
+        if hasattr(self, "engine_status_value"):
+            self.engine_status_value.setText(
+                tr("Models discovered: {count}").format(count=count)
+            )
+            self.engine_status_value.setToolTip(str(sorted(providers)))
+        return result
 
     def set_resolved_engine(self, model_id: str, engine: str, label: str) -> None:
         """Mostra o motor resolvido para o modelo atual (somente leitura)."""

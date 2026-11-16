@@ -232,7 +232,7 @@ class VoiceCallWidget(QWidget):
 
     header.addStretch(1)
 
-    title = QLabel("CHAMADA DE VOZ · IN-APP")
+    title = QLabel(tr("VOICE CALL · IN-APP"))
     title.setStyleSheet("color: #8E95A0; font-size: 12px; font-weight: 500; letter-spacing: 1px;")
     header.addWidget(title)
     layout.addLayout(header)
@@ -881,6 +881,17 @@ class MainWindow(
       if hasattr(self, "routing_target_badge"):
           self._update_routing_target_badge()
 
+  def _effective_ctx(self, ceiling: int | None) -> int | None:
+    """`min(ctx do usuario, teto do modelo)`: o rodape nunca mente sobre o CTX."""
+    from ..config import get_local_inference_params
+
+    user_ctx = int((get_local_inference_params() or {}).get("num_ctx") or 0) or None
+    if ceiling is None:
+      return user_ctx
+    if user_ctx is None:
+      return int(ceiling)
+    return min(int(user_ctx), int(ceiling))
+
   def _update_ctx_label(self) -> None:
       """Atualiza o CTX com o ultimo scan conhecido, sem bloquear a interface."""
       if not hasattr(self, "ctx_status_label"):
@@ -898,7 +909,7 @@ class MainWindow(
           if model_id:
               cached = scan_model(model_id)
               if cached.get("ok"):
-                  self.ctx_status_label.setText(format_ctx(cached.get("context")))
+                  self.ctx_status_label.setText(format_ctx(self._effective_ctx(cached.get("context"))))
                   self.ctx_status_label.setToolTip(
                       f"{model_id} context={cached.get('context')} layers={cached.get('layers')}"
                   )
@@ -945,7 +956,7 @@ class MainWindow(
               current = str(selector.current_model_id() or "")
           if model_id and current and model_id != current:
               return
-          self.ctx_status_label.setText(format_ctx(context))
+          self.ctx_status_label.setText(format_ctx(self._effective_ctx(context)))
           self.ctx_status_label.setToolTip(f"{model_id} context={context} layers={layers}")
       except RuntimeError:
           return
@@ -1178,14 +1189,14 @@ class MainWindow(
     from .icons import ACTIVE, IDLE, vector_icon
 
     pairs = (
-      ("chat_nav_button", "chat", "Geral"),
-      ("engineer_button", "engineer", "Engenheiro"),
+      ("chat_nav_button", "chat", "General"),
+      ("engineer_button", "engineer", "Engineer"),
       ("professor_button", "professor", "Professor"),
-      ("library_nav_button", "library", "Biblioteca"),
-      ("evolution_nav_button", "evolution", "Evolução"),
+      ("library_nav_button", "library", "Library"),
+      ("evolution_nav_button", "evolution", "Evolution"),
       ("call_nav_button", "call", "Voice Call"),
       ("devices_nav_button", "devices", "Devices"),
-      ("tools_button", "tools", "Ferramentas"),
+      ("tools_button", "tools", "Tools"),
       ("settings_nav_button", "settings", "Configurações"),
     )
     active = self.current_specialization
@@ -1901,6 +1912,11 @@ class MainWindow(
       cfg = getattr(self, "cfg", None)
       self.local_inference_manager = LocalInferenceManager(cfg, parent=self)
       self.local_inference_manager.attach_settings_widget(self.settings_widget)
+      # Alterar o slider de contexto precisa refletir no CTX do rodape na hora.
+      if hasattr(self.settings_widget, "reload_inference_engine_requested"):
+        self.settings_widget.reload_inference_engine_requested.connect(
+          lambda _params: self._update_ctx_label()
+        )
     except Exception as exc:
       logger.warning(f"Não foi possível inicializar LocalInferenceManager: {exc}")
     return self.settings_widget

@@ -764,6 +764,8 @@ def get_local_inference_params() -> dict[str, Any]:
         "speculative_decoding": str(lip.get("speculative_decoding", "Off")),
         "chat_template": str(lip.get("chat_template", "auto")),
         "flash_attn": bool(lip.get("flash_attn", True)),
+        "temperature": float(min(max(float(lip.get("temperature", 0.2)), 0.0), 2.0)),
+        "max_tokens": int(lip["max_tokens"]) if lip.get("max_tokens") else None,
     }
 
 
@@ -789,6 +791,10 @@ def save_local_inference_params(params: dict[str, Any]) -> dict[str, Any]:
         "speculative_decoding": str(params.get("speculative_decoding", "Off")),
         "chat_template": str(params.get("chat_template", "auto")),
         "flash_attn": bool(params.get("flash_attn", True)),
+        # Sem estas duas chaves o slider de temperatura e o teto de tokens
+        # nunca chegavam ao servidor: eram descartados no whitelist.
+        "temperature": float(min(max(float(params.get("temperature", 0.2)), 0.0), 2.0)),
+        "max_tokens": int(params["max_tokens"]) if params.get("max_tokens") else None,
     }
     cfg = _read_mark_cfg()
     cfg["local_inference_params"] = sanitized

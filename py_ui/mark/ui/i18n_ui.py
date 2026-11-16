@@ -288,6 +288,11 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
         "हम क्या अध्ययन करें?", "¿Qué vamos a estudiar ?", "Qu'allons-nous étudier ?",
         "ماذا سندرس؟",
     ),
+    "VOICE CALL · IN-APP": (
+        "VOICE CALL · IN-APP", "CHAMADA DE VOZ · IN-APP", "语音通话 · 应用内",
+        "वॉइस कॉल · ऐप में", "LLAMADA DE VOZ · EN LA APP",
+        "APPEL VOCAL · DANS L'APP", "مكالمة صوتية · داخل التطبيق",
+    ),
     "Workspace": (
         "Workspace", "Workspace", "工作区", "वर्कस्पेस", "Espacio de trabajo",
         "Espace de travail", "مساحة العمل",

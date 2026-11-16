@@ -58,10 +58,39 @@ struct ChatRequest {
     max_tokens: Option<u32>,
     #[serde(default)]
     reasoning_level: Option<String>,
+    /// Alias enviado pela UI PyQt (`mark_reasoning_level`).
+    #[serde(default)]
+    mark_reasoning_level: Option<String>,
     #[serde(default)]
     reasoning_loops: Option<u32>,
     #[serde(default)]
     temperature: Option<f32>,
+    /// Janela de contexto pedida pela UI (`num_ctx` ou `context_length`).
+    #[serde(default)]
+    context_length: Option<u32>,
+    #[serde(default)]
+    num_ctx: Option<u32>,
+}
+
+impl ChatRequest {
+    /// Profundidade de raciocinio efetiva, lida do JSON da requisicao.
+    fn effective_loops(&self) -> Option<u32> {
+        if let Some(loops) = self.reasoning_loops {
+            return Some(loops.clamp(1, 3));
+        }
+        let level = self.reasoning_level.clone().or_else(|| self.mark_reasoning_level.clone());
+        match level.as_deref() {
+            Some("instant") => Some(1),
+            Some("balanced") | Some("medium") => Some(2),
+            Some("deep") | Some("high") => Some(3),
+            _ => None,
+        }
+    }
+
+    /// Janela de contexto efetiva pedida pela requisicao.
+    fn requested_context(&self) -> Option<u32> {
+        self.context_length.or(self.num_ctx).map(|ctx| ctx.clamp(512, 2_097_152))
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -324,12 +353,11 @@ async fn handle(
             return write_json(&mut stream, 404, &payload.to_string()).await;
         }
         let limit = req.max_tokens.unwrap_or(0) as usize;
-        let loops = req.reasoning_loops.or(match req.reasoning_level.as_deref() {
-            Some("instant") => Some(1),
-            Some("balanced") | Some("medium") => Some(2),
-            Some("deep") | Some("high") => Some(3),
-            _ => None,
-        });
+        // Profundidade de raciocinio vem do JSON (inclusive do alias da UI) e o
+        // `reasoning_loops` explicito tem precedencia.
+        let loops = req.effective_loops();
+        // Janela de contexto pedida pela requisicao (num_ctx ou context_length).
+        let requested_ctx = req.requested_context();
         // Temperatura por requisicao: sobrescreve o config do motor quando enviada.
         let request_temperature = req.temperature;
         // O socket e as rotas de status ficam instantaneos; so a inferencia espera
@@ -505,6 +533,8 @@ async fn handle(
                 "engine": engine_label,
                 "reasoning_loops": loops.unwrap_or(2),
                 "max_tokens": limit,
+                "context_length": requested_ctx.unwrap_or(context_length),
+                "served_context": requested_ctx.unwrap_or(context_length).min(context_length),
                 "tokens_generated": emitted
             },
         });
@@ -513,4 +543,65 @@ async fn handle(
 
     let payload = serde_json::json!({"error": {"message": "rota nao encontrada", "path": path}});
     write_json(&mut stream, 404, &payload.to_string()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(body: &str) -> ChatRequest {
+        serde_json::from_str(body).expect("json de requisicao deve desserializar")
+    }
+
+    #[test]
+    fn request_carries_ui_tuning_into_the_engine() {
+        // Payload exatamente como a UI PyQt envia.
+        let req = parse(
+            r#"{"model":"mark-svid-1bit","stream":false,
+                "mark_reasoning_level":"high","reasoning_level":"high",
+                "reasoning_loops":3,"temperature":0.45,"max_tokens":33,
+                "context_length":4096,"num_ctx":4096,
+                "messages":[{"role":"user","content":"oi"}]}"#,
+        );
+        assert_eq!(req.temperature, Some(0.45), "temperatura ignorada");
+        assert_eq!(req.max_tokens, Some(33), "teto de tokens ignorado");
+        assert_eq!(req.effective_loops(), Some(3), "raciocinio profundo ignorado");
+        assert_eq!(req.requested_context(), Some(4096), "contexto ignorado");
+    }
+
+    #[test]
+    fn reasoning_alias_from_the_ui_is_honoured() {
+        // A UI antiga so mandava `mark_reasoning_level`.
+        for (level, expected) in [("instant", 1), ("medium", 2), ("high", 3)] {
+            let req = parse(&format!(
+                r#"{{"mark_reasoning_level":"{level}","messages":[]}}"#
+            ));
+            assert_eq!(
+                req.effective_loops(),
+                Some(expected),
+                "alias mark_reasoning_level={level} nao aplicado"
+            );
+        }
+        let explicit = parse(r#"{"mark_reasoning_level":"high","reasoning_loops":1}"#);
+        assert_eq!(
+            explicit.effective_loops(),
+            Some(1),
+            "reasoning_loops explicito deve vencer o nivel"
+        );
+    }
+
+    #[test]
+    fn context_is_clamped_to_the_supported_window() {
+        let tiny = parse(r#"{"num_ctx":8}"#);
+        assert_eq!(tiny.requested_context(), Some(512), "ctx minimo nao aplicado");
+        let huge = parse(r#"{"context_length":99999999}"#);
+        assert_eq!(
+            huge.requested_context(),
+            Some(2_097_152),
+            "ctx acima do teto nao foi limitado"
+        );
+        let none = parse(r#"{"messages":[]}"#);
+        assert_eq!(none.requested_context(), None, "ctx ausente deveria ser None");
+        assert_eq!(none.effective_loops(), None, "raciocinio ausente deveria ser None");
+    }
 }

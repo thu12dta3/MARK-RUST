@@ -107,18 +107,28 @@ def main() -> int:
                 retranslate_tree(widget)
         QTest.qWait(200)
 
-    # Command Palette: comandos registrados devem estar traduzidos no idioma atual.
-    palette = getattr(window, "command_palette", None)
-    if palette is not None:
-        entries = []
-        for name in ("commands", "_commands", "entries"):
-            data = getattr(palette, name, None)
-            if isinstance(data, (list, tuple)) and data:
-                entries = [getattr(e, "title", None) or getattr(e, "label", None) or str(e) for e in data]
-                break
-        print(f"palette_entries={len(entries)} amostra={entries[:3]}")
-        if entries and not any(isinstance(e, str) and e.strip() for e in entries):
-            failures.append("Command Palette sem titulos legiveis")
+    # Command Palette: abrir de fato, contar itens e provar retraducao ao vivo.
+    from PyQt6.QtWidgets import QListWidget
+
+    for code in ("en", "pt-BR", "es"):
+        set_language(code)
+        retranslate_tree(window)
+        window.open_command_palette()
+        QTest.qWait(500)
+        palette = getattr(window, "command_palette", None)
+        lists = palette.findChildren(QListWidget) if palette is not None else []
+        entries = sum(lst.count() for lst in lists)
+        titles = []
+        for lst in lists:
+            for row in range(min(lst.count(), 3)):
+                titles.append(lst.item(row).text())
+        print(f"palette[{code}] entries={entries} amostra={titles[:3]}")
+        if entries <= 0:
+            failures.append(f"{code}: Command Palette sem entradas abertas")
+        window._on_escape()
+        QTest.qWait(300)
+        if palette is not None and palette.isVisible():
+            failures.append(f"{code}: Esc nao fechou a Command Palette")
 
     set_language("pt-BR")
     retranslate_tree(window)

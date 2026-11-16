@@ -115,6 +115,25 @@ def validate_and_clamp_inference_params(params: dict[str, Any]) -> dict[str, Any
     return clamped
 
 
+_validate_clamp_base = validate_and_clamp_inference_params
+
+
+def validate_and_clamp_inference_params(params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Clamp dos parametros locais preservando temperatura e teto de tokens.
+
+    O clamp anterior montava um dicionario fechado e descartava `temperature` e
+    `max_tokens`, entao qualquer ajuste de amostragem do usuario se perdia
+    antes de chegar ao servidor.
+    """
+    raw = dict(params or {})
+    clamped = _validate_clamp_base(raw)
+    base_temp = clamped.get("temperature", 0.2)
+    clamped["temperature"] = float(min(max(float(raw.get("temperature", base_temp) or 0.2), 0.0), 2.0))
+    raw_max = raw.get("max_tokens", clamped.get("max_tokens"))
+    clamped["max_tokens"] = int(raw_max) if raw_max else None
+    return clamped
+
+
 def get_local_inference_params(cfg: dict | None = None) -> dict[str, Any]:
     """Retorna os parâmetros de inferência local atuais do MARK, com garantia de limites seguros."""
     if cfg is None:

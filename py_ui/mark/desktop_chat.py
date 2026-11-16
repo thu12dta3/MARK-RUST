@@ -72,6 +72,27 @@ def is_pure_code_generation_request(text: str) -> bool:
     return False
 
 
+def _tuning_payload(reasoning_level: str) -> dict:
+    """Parametros efetivos lidos da UI e enviados ao backend em cada requisicao.
+
+    Sem isto o slider de contexto, a temperatura e o nivel de raciocinio ficam
+    apenas na interface: o servidor nunca recebia os valores.
+    """
+    from .config import get_local_inference_params
+
+    params = get_local_inference_params() or {}
+    ctx = int(params.get("num_ctx") or 0) or None
+    raw_max = params.get("max_tokens")
+    return {
+        "reasoning_level": str(reasoning_level),
+        "reasoning_loops": {"instant": 1, "medium": 2, "high": 3}.get(str(reasoning_level), 2),
+        "temperature": float(params.get("temperature") or 0.2),
+        "max_tokens": int(raw_max) if raw_max else None,
+        "context_length": ctx,
+        "num_ctx": ctx,
+    }
+
+
 class ChatMixin:
     def _resolve_model_and_provider(self) -> tuple[str, str]:
         """Extrai deterministicamente o active_model_id e provider_name configurados na UI/sessão."""
@@ -455,6 +476,7 @@ class ChatMixin:
                     "model": profile,
                     "stream": False,
                     "mark_reasoning_level": reasoning_level,
+                    **_tuning_payload(reasoning_level),
                     "messages": req_msgs,
                     "system": sys_content,
                     "system_prompt": sys_content,
@@ -487,6 +509,7 @@ class ChatMixin:
                     "model": profile,
                     "stream": False,
                     "mark_reasoning_level": reasoning_level,
+                    **_tuning_payload(reasoning_level),
                     "messages": payload_messages,
                     "system": system_prompt,
                     "system_prompt": system_prompt,

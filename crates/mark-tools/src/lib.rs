@@ -8,8 +8,14 @@ pub mod palette;
 pub mod skills;
 pub mod web;
 
-pub use engineer::{apply_unified_diff, Action, ActionKind, EngineerSession, StepOutcome};
-pub use mcp::{McpClient, McpServerConfig, McpTool};
+pub use engineer::{
+    apply_unified_diff, native_tools, Action, ActionKind, EngineerSession, StepOutcome,
+    ToolDescriptor, ToolOrigin,
+};
+pub use mcp::{
+    apply_enabled_state, load_enabled_servers, load_mcp_servers, read_mark_state,
+    split_qualified_name, McpClient, McpRegistry, McpServerConfig, McpTool, MCP_TOOL_PREFIX,
+};
 pub use sandbox::{bwrap_available, SandboxConfig, SandboxResult};
 pub use palette::{fuzzy_score, Command, PaletteAction, Registry};
 pub use skills::{load_skills, render_skill, SkillInfo};

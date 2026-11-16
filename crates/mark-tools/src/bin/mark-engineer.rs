@@ -5,8 +5,9 @@
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
-use mark_tools::engineer::{Action, ApprovalMode, EngineerSession};
+use anyhow::{bail, Context, Result};
+use mark_tools::engineer::{Action, ApprovalMode, EngineerSession, ToolDescriptor};
+use mark_tools::mcp::{load_enabled_servers, McpRegistry};
 use mark_tools::skills::load_skills;
 use mark_tools::web::{web_fetch_blocking, web_search_blocking};
 use serde_json::json;
@@ -15,6 +16,10 @@ struct Args {
     approval: ApprovalMode,
     workspace: PathBuf,
     list_skills: bool,
+    list_tools: bool,
+    no_mcp: bool,
+    hermes_config: Option<PathBuf>,
+    mark_config: Option<PathBuf>,
     web_search: Option<String>,
     web_fetch: Option<String>,
     limit: usize,
@@ -29,6 +34,10 @@ fn parse_args() -> Result<Args> {
         approval: ApprovalMode::Suggest,
         workspace: mark_core::paths::default_workspace(),
         list_skills: false,
+        list_tools: false,
+        no_mcp: false,
+        hermes_config: None,
+        mark_config: None,
         web_search: None,
         web_fetch: None,
         limit: 5,
@@ -51,7 +60,11 @@ fn parse_args() -> Result<Args> {
             "--workspace" => {
                 args.workspace = raw.next().map(PathBuf::from).unwrap_or(args.workspace);
             }
+            "--hermes-config" => args.hermes_config = raw.next().map(PathBuf::from),
+            "--mark-config" => args.mark_config = raw.next().map(PathBuf::from),
             "--list-skills" => args.list_skills = true,
+            "--list-tools" => args.list_tools = true,
+            "--no-mcp" => args.no_mcp = true,
             "--hw-profile" => args.hw_profile = true,
             "--sentinel-scan" => args.sentinel_scan = raw.next(),
             "--sentinel-delete" => args.sentinel_delete = raw.next(),
@@ -68,6 +81,62 @@ fn parse_args() -> Result<Args> {
     }
     Ok(args)
 }
+
+/// Caminho do config.yaml do Hermes, honrando `--hermes-config`.
+fn hermes_config_path(args: &Args) -> PathBuf {
+    args.hermes_config
+        .clone()
+        .unwrap_or_else(mark_core::paths::hermes_config_file)
+}
+
+/// Caminho do config.json do MARK (onde a UI grava `mcp_server_state`).
+fn mark_config_path(args: &Args) -> PathBuf {
+    args.mark_config
+        .clone()
+        .unwrap_or_else(|| mark_core::paths::config_dir().join("config.json"))
+}
+
+/// Registry com apenas os servidores MCP habilitados no modal Plugins.
+fn mcp_registry(args: &Args) -> Result<McpRegistry> {
+    if args.no_mcp {
+        return Ok(McpRegistry::empty());
+    }
+    let hermes = hermes_config_path(args);
+    let mark = mark_config_path(args);
+    let servers = load_enabled_servers(&hermes, &mark)
+        .with_context(|| format!("lendo servidores MCP de {}", hermes.display()))?;
+    Ok(McpRegistry::start(&servers))
+}
+
+fn tool_payload(tool: &ToolDescriptor) -> serde_json::Value {
+    json!({
+        "name": tool.name,
+        "origin": tool.origin.label(),
+        "description": tool.description,
+        "input_schema": tool.input_schema,
+    })
+}
+
+fn tools_payload(session: &EngineerSession) -> serde_json::Value {
+    let tools = session.tools();
+    let skipped: Vec<serde_json::Value> = session
+        .mcp_skipped()
+        .iter()
+        .map(|(server, reason)| json!({"server": server, "reason": reason}))
+        .collect();
+    json!({
+        "ok": true,
+        "count": tools.len(),
+        "mcp_servers": session.mcp_servers(),
+        "mcp_tools": tools
+            .iter()
+            .filter(|tool| tool.name.starts_with(mark_tools::MCP_TOOL_PREFIX))
+            .count(),
+        "mcp_skipped": skipped,
+        "tools": tools.iter().map(tool_payload).collect::<Vec<_>>(),
+    })
+}
+
 
 fn skills_payload() -> serde_json::Value {
     let root = mark_core::paths::hermes_skills_dir();
@@ -391,6 +460,13 @@ fn main() -> Result<()> {
         println!("{}", skills_payload());
         return Ok(());
     }
+    if args.list_tools {
+        // Catalogo real exposto ao loop: acoes nativas + MCPs habilitados.
+        let session = EngineerSession::new(args.workspace.clone(), args.approval)
+            .with_mcp(mcp_registry(&args)?);
+        println!("{}", tools_payload(&session));
+        return Ok(());
+    }
     if let Some(query) = &args.web_search {
         let hits = web_search_blocking(query, args.limit)?;
         let payload = json!({
@@ -420,15 +496,34 @@ fn main() -> Result<()> {
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut raw)?;
     let value: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({}));
     let action = Action::from_json(&value)?;
-    let mut session = EngineerSession::new(args.workspace.clone(), args.approval);
+    let mut session = EngineerSession::new(args.workspace.clone(), args.approval)
+        .with_mcp(mcp_registry(&args)?);
     let outcome = session.execute(action)?;
-    let payload = json!({
+    let mut payload = json!({
         "ok": true,
         "approval": format!("{:?}", args.approval),
         "workspace": args.workspace.to_string_lossy().into_owned(),
         "outcome": format!("{outcome:?}"),
+        "mcp_servers": session.mcp_servers(),
+        "tools": session.tools().len(),
         "transcript": session.transcript(),
     });
+    if let mark_tools::StepOutcome::McpResult {
+        server,
+        tool,
+        text,
+        is_error,
+    } = &outcome
+    {
+        // Retorno estruturado da ferramenta MCP para o loop do agente.
+        payload["mcp"] = json!({
+            "server": server,
+            "tool": tool,
+            "stdout": text,
+            "is_error": is_error,
+        });
+    }
     println!("{payload}");
     Ok(())
 }
+

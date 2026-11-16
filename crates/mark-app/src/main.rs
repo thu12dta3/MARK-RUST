@@ -724,6 +724,8 @@ impl App {
                         query: None,
                         content: None,
                         command: vec!["sh".into(), "-c".into(), cmd],
+                        tool: None,
+                        arguments: None,
                     }) {
                         Ok(mark_tools::StepOutcome::Command(r)) => format!(
                             "status {:?} em {:.2}s\n{}\n{}",

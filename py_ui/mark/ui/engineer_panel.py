@@ -29,7 +29,7 @@ APPROVALS = (
     ("auto-edit", "Auto-Edit"),
     ("full-auto", "Full-Auto [bwrap Sandbox]"),
 )
-ACTIONS = ("plan", "read", "grep", "shell", "test")
+ACTIONS = ("plan", "read", "grep", "shell", "test", "mcp")
 
 
 class EngineerWorker(QThread):
@@ -260,6 +260,14 @@ class EngineerPanel(QFrame):
             payload["approval"] = self.approval_combo.currentData()
         elif action == "plan":
             payload["content"] = target or "Plan the change"
+        elif action == "mcp":
+            tool, _, raw_args = target.partition(" ")
+            payload["tool"] = tool
+            try:
+                payload["arguments"] = json.loads(raw_args) if raw_args.strip() else {}
+            except json.JSONDecodeError:
+                payload["arguments"] = {"text": raw_args.strip()}
+
         self.run_button.setDisabled(True)
         self.steps_label.setText(tr("Running {action} in the sandbox...").format(action=action))
         worker = EngineerWorker(payload, self.workspace_input.text(), str(self.approval_combo.currentData()), parent=self)
@@ -283,7 +291,16 @@ class EngineerPanel(QFrame):
         if not diff and "outcome" in result:
             diff = str(result.get("outcome"))
         self.diff_view.setHtml(self._diff_html(diff) if diff else f'<span style="color:#5C6370;">{tr("No diff produced")}</span>')
-        out = (str(result.get("stdout") or "") + "\n" + str(result.get("stderr") or "")).strip()
+        mcp = result.get("mcp") or {}
+        out = "\n".join(
+            part
+            for part in (
+                str(mcp.get("stdout") or "") if mcp else "",
+                str(result.get("stdout") or ""),
+                str(result.get("stderr") or ""),
+            )
+            if part.strip()
+        ).strip()
         self.output_view.setPlainText(out or tr("(no sandbox output)"))
 
     @staticmethod

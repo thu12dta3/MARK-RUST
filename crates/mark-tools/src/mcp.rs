@@ -1,7 +1,9 @@
 //! Cliente MCP (Model Context Protocol) sobre stdio e HTTP.
 //!
-//! Le a secao `mcp_servers:` de `/home/thu12/.hermes/config.yaml` e fala
-//! JSON-RPC 2.0 delimitado por linha com o servidor escolhido.
+//! Le a secao `mcp_servers:` do `config.yaml` do Hermes (resolvido via XDG) e
+//! fala JSON-RPC 2.0 delimitado por linha com o servidor escolhido.
+//! O estado ligado/desligado vem do `config.json` do MARK, escrito pelo modal
+//! Plugins (`mcp_server_state`).
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
@@ -30,6 +32,29 @@ pub struct McpTool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+}
+
+/// Prefixo do nome qualificado usado no catalogo de ferramentas do Engineer.
+pub const MCP_TOOL_PREFIX: &str = "mcp__";
+
+impl McpTool {
+    /// Nome unico no catalogo: `mcp__servidor__ferramenta`.
+    ///
+    /// Servidores diferentes podem publicar o mesmo nome de ferramenta, entao o
+    /// catalogo sempre qualifica com o servidor de origem.
+    pub fn qualified_name(&self) -> String {
+        format!("{MCP_TOOL_PREFIX}{}__{}", self.server, self.name)
+    }
+}
+
+/// Separa `mcp__servidor__ferramenta` em `(servidor, ferramenta)`.
+pub fn split_qualified_name(qualified: &str) -> Option<(String, String)> {
+    let rest = qualified.strip_prefix(MCP_TOOL_PREFIX)?;
+    let (server, tool) = rest.split_once("__")?;
+    if server.is_empty() || tool.is_empty() {
+        return None;
+    }
+    Some((server.to_string(), tool.to_string()))
 }
 
 /// Aplica o estado persistido pela UI (`mcp_server_state`) a uma lista de servidores.
@@ -399,11 +424,100 @@ impl Drop for McpClient {
     }
 }
 
+/// Conjunto de clientes MCP ativos com o catalogo agregado de ferramentas.
+///
+/// So entram aqui os servidores que passaram por `load_enabled_servers`: os
+/// desativados no modal Plugins nunca sao iniciados nem expostos.
+pub struct McpRegistry {
+    clients: Vec<McpClient>,
+    tools: Vec<McpTool>,
+    skipped: Vec<(String, String)>,
+}
+
+impl McpRegistry {
+    /// Registry vazio: usado quando nenhum servidor MCP esta habilitado.
+    pub fn empty() -> Self {
+        Self {
+            clients: Vec::new(),
+            tools: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// Inicia cada servidor e faz o handshake, agregando as ferramentas.
+    ///
+    /// Um servidor que falha ao subir nao derruba o loop: vai para `skipped`
+    /// com o motivo real, para a UI poder reportar honestamente.
+    pub fn start(configs: &[McpServerConfig]) -> Self {
+        let mut registry = Self::empty();
+        for cfg in configs {
+            match McpClient::start(cfg).and_then(|mut client| {
+                client.initialize()?;
+                Ok(client)
+            }) {
+                Ok(client) => {
+                    registry.tools.extend(client.tools().iter().cloned());
+                    registry.clients.push(client);
+                }
+                Err(err) => registry
+                    .skipped
+                    .push((cfg.name.clone(), format!("{err:#}"))),
+            }
+        }
+        registry.tools.sort_by(|a, b| a.qualified_name().cmp(&b.qualified_name()));
+        registry
+    }
+
+    /// Ferramentas agregadas de todos os servidores ativos.
+    pub fn tools(&self) -> &[McpTool] {
+        &self.tools
+    }
+
+    /// Nomes dos servidores que responderam ao handshake.
+    pub fn servers(&self) -> Vec<String> {
+        self.clients
+            .iter()
+            .map(|client| client.server().to_string())
+            .collect()
+    }
+
+    /// Servidores habilitados que falharam ao iniciar, com o motivo.
+    pub fn skipped(&self) -> &[(String, String)] {
+        &self.skipped
+    }
+
+    /// Indica se nenhum servidor ativo publicou ferramentas.
+    pub fn is_empty(&self) -> bool {
+        self.tools.is_empty()
+    }
+
+    /// Executa uma ferramenta pelo nome qualificado do catalogo.
+    pub fn call(&mut self, qualified: &str, args: Value) -> Result<Value> {
+        let (server, tool) = split_qualified_name(qualified)
+            .with_context(|| format!("nome de ferramenta MCP invalido: {qualified}"))?;
+        self.call_server_tool(&server, &tool, args)
+    }
+
+    /// Executa uma ferramenta de um servidor ativo.
+    pub fn call_server_tool(&mut self, server: &str, tool: &str, args: Value) -> Result<Value> {
+        let client = self
+            .clients
+            .iter_mut()
+            .find(|client| client.server() == server)
+            .with_context(|| format!("servidor MCP '{server}' nao esta ativo"))?;
+        client.call_tool(tool, args)
+    }
+}
+
+/// Servidor MCP de teste: ecoa o campo `text` recebido.
+///
+/// Visivel apenas em builds de teste, compartilhado entre `mcp` e `engineer`
+/// para que o teste ponta-a-ponta use o mesmo protocolo real.
 #[cfg(test)]
-mod tests {
+pub(crate) mod testing {
     use super::*;
 
-    const STUB: &str = r#"
+    pub const STDIO_STUB: &str = r#"
 import sys, json
 for line in sys.stdin:
     line = line.strip()
@@ -417,8 +531,12 @@ for line in sys.stdin:
     elif method == "tools/list":
         out = {"jsonrpc":"2.0","id":mid,"result":{"tools":[{"name":"echo","description":"repetidor","inputSchema":{"type":"object"}}]}}
     elif method == "tools/call":
-        txt = str(msg["params"]["arguments"].get("text",""))
-        out = {"jsonrpc":"2.0","id":mid,"result":{"content":[{"type":"text","text":txt}],"isError":False}}
+        name = msg["params"].get("name","")
+        if name != "echo":
+            out = {"jsonrpc":"2.0","id":mid,"error":{"code":-32602,"message":"ferramenta desconhecida: " + str(name)}}
+        else:
+            txt = str(msg["params"]["arguments"].get("text",""))
+            out = {"jsonrpc":"2.0","id":mid,"result":{"content":[{"type":"text","text":txt}],"isError":False}}
     elif mid is None:
         continue
     else:
@@ -426,15 +544,26 @@ for line in sys.stdin:
     print(json.dumps(out), flush=True)
 "#;
 
-    fn stub_cfg() -> McpServerConfig {
+    /// Configuracao stdio apontando para o servidor de teste.
+    pub fn stub_config(name: &str) -> McpServerConfig {
         McpServerConfig {
-            name: "stub".into(),
-            command: Some("python3".into()),
-            args: vec!["-u".into(), "-c".into(), STUB.into()],
+            name: name.to_string(),
+            command: Some("python3".to_string()),
+            args: vec!["-u".to_string(), "-c".to_string(), STDIO_STUB.to_string()],
             env: BTreeMap::new(),
             url: None,
             enabled: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::stub_config;
+    use super::*;
+
+    fn stub_cfg() -> McpServerConfig {
+        stub_config("stub")
     }
 
     #[test]
@@ -443,10 +572,38 @@ for line in sys.stdin:
         c.initialize().expect("handshake deve funcionar");
         assert_eq!(c.tools().len(), 1);
         assert_eq!(c.tools()[0].name, "echo");
+        assert_eq!(c.tools()[0].qualified_name(), "mcp__stub__echo");
         let res = c
             .call_tool("echo", json!({"text": "ping-mark"}))
             .expect("chamada deve funcionar");
         assert_eq!(McpClient::result_text(&res), "ping-mark");
+    }
+
+    #[test]
+    fn registry_splits_qualified_names() {
+        assert_eq!(
+            split_qualified_name("mcp__graphify__search"),
+            Some(("graphify".to_string(), "search".to_string()))
+        );
+        assert_eq!(split_qualified_name("search"), None);
+        assert_eq!(split_qualified_name("mcp__sem_ferramenta"), None);
+        assert_eq!(split_qualified_name("mcp____vazio"), None);
+    }
+
+    #[test]
+    fn registry_executes_a_tool_over_stdio() {
+        let mut registry = McpRegistry::start(&[stub_cfg()]);
+        assert_eq!(registry.servers(), vec!["stub".to_string()]);
+        assert_eq!(registry.tools().len(), 1);
+        assert!(registry.skipped().is_empty());
+        let res = registry
+            .call("mcp__stub__echo", json!({"text": "ponte"}))
+            .expect("chamada pelo nome qualificado");
+        assert_eq!(McpClient::result_text(&res), "ponte");
+        let err = registry
+            .call("mcp__ausente__echo", json!({}))
+            .expect_err("servidor ausente deve falhar");
+        assert!(err.to_string().contains("nao esta ativo"));
     }
 
     #[test]

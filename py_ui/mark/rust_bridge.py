@@ -304,6 +304,16 @@ class RustBridge:
             args.extend(["--workspace", workspace])
         return self._json(self._run(ENGINEER_BIN, args, stdin=json.dumps(action), timeout=600))
 
+    def engineer_tools(self, workspace: str | None = None, approval: str = "full-auto") -> dict[str, Any]:
+        """Catalogo real do loop do Engineer: acoes nativas + ferramentas MCP ativas."""
+        args = ["--list-tools", "--json", "--approval", approval]
+        if workspace:
+            args.extend(["--workspace", workspace])
+        payload = self._json(self._run(ENGINEER_BIN, args, timeout=120))
+        payload.setdefault("tools", [])
+        payload.setdefault("mcp_servers", [])
+        return payload
+
     def engineer_skills(self) -> dict[str, Any]:
         result = self._run(ENGINEER_BIN, ["--list-skills", "--json"], timeout=60)
         return self._json(result)

@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
-use serde_json::Value;
+use serde_json::{json, Value};
 
+use crate::mcp::{self, McpClient, McpRegistry, McpTool};
 use crate::sandbox::{self, SandboxConfig, SandboxResult};
 
 /// Tipo de acao do loop agentico.
@@ -22,6 +23,8 @@ pub enum ActionKind {
     ApplyPatch,
     Shell,
     Test,
+    /// Chamada a uma ferramenta de um servidor MCP ativo.
+    Mcp,
 }
 
 impl ActionKind {
@@ -35,15 +38,20 @@ impl ActionKind {
             "apply_patch" | "patch" | "diff" => Some(ActionKind::ApplyPatch),
             "shell" | "exec" | "exec_command" => Some(ActionKind::Shell),
             "test" => Some(ActionKind::Test),
+            "mcp" | "mcp_call" | "tool" => Some(ActionKind::Mcp),
             _ => None,
         }
     }
 
-    /// Indica se a acao altera o workspace.
+    /// Indica se a acao altera o workspace ou dispara efeito externo.
     pub fn mutates(self) -> bool {
         matches!(
             self,
-            ActionKind::Write | ActionKind::ApplyPatch | ActionKind::Shell | ActionKind::Test
+            ActionKind::Write
+                | ActionKind::ApplyPatch
+                | ActionKind::Shell
+                | ActionKind::Test
+                | ActionKind::Mcp
         )
     }
 }
@@ -56,6 +64,10 @@ pub struct Action {
     pub query: Option<String>,
     pub content: Option<String>,
     pub command: Vec<String>,
+    /// Nome qualificado da ferramenta MCP (`mcp__servidor__ferramenta`).
+    pub tool: Option<String>,
+    /// Argumentos JSON enviados a ferramenta MCP.
+    pub arguments: Option<Value>,
 }
 
 impl Action {
@@ -86,8 +98,109 @@ impl Action {
                 .and_then(|p| p.as_str())
                 .map(|s| s.to_string()),
             command,
+            tool: v
+                .get("tool")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string()),
+            arguments: v.get("arguments").cloned(),
         })
     }
+}
+
+/// Origem de uma ferramenta do catalogo do Engineer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolOrigin {
+    /// Acao nativa executada pelo proprio loop (read, grep, shell, mcp...).
+    Native,
+    /// Ferramenta publicada por um servidor MCP ativo.
+    Mcp { server: String },
+}
+
+impl ToolOrigin {
+    /// Rotulo serializavel usado nos payloads JSON do binario.
+    pub fn label(&self) -> String {
+        match self {
+            ToolOrigin::Native => "native".to_string(),
+            ToolOrigin::Mcp { server } => format!("mcp:{server}"),
+        }
+    }
+}
+
+/// Ferramenta exposta ao modelo no loop do `mark-engineer`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolDescriptor {
+    pub name: String,
+    pub origin: ToolOrigin,
+    pub description: String,
+    pub input_schema: Value,
+}
+
+impl ToolDescriptor {
+    fn native(name: &str, description: &str, input_schema: Value) -> Self {
+        Self {
+            name: name.to_string(),
+            origin: ToolOrigin::Native,
+            description: description.to_string(),
+            input_schema,
+        }
+    }
+
+    fn from_mcp(tool: &McpTool) -> Self {
+        Self {
+            name: tool.qualified_name(),
+            origin: ToolOrigin::Mcp {
+                server: tool.server.clone(),
+            },
+            description: tool.description.clone(),
+            input_schema: tool.input_schema.clone(),
+        }
+    }
+}
+
+/// Catalogo nativo do loop: uma entrada por acao realmente executavel.
+pub fn native_tools() -> Vec<ToolDescriptor> {
+    vec![
+        ToolDescriptor::native(
+            "plan",
+            "Write the next step as text without touching disk or network.",
+            json!({"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]}),
+        ),
+        ToolDescriptor::native(
+            "read",
+            "Read a UTF-8 text file inside the workspace.",
+            json!({"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
+        ),
+        ToolDescriptor::native(
+            "grep",
+            "Search a regex over the workspace and return matching lines.",
+            json!({"type": "object", "properties": {"query": {"type": "string"}, "path": {"type": "string"}}, "required": ["query"]}),
+        ),
+        ToolDescriptor::native(
+            "write",
+            "Write a whole file inside the workspace (Suggest only proposes the diff).",
+            json!({"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}),
+        ),
+        ToolDescriptor::native(
+            "apply_patch",
+            "Apply a unified diff to a workspace file.",
+            json!({"type": "object", "properties": {"path": {"type": "string"}, "patch": {"type": "string"}}, "required": ["path", "patch"]}),
+        ),
+        ToolDescriptor::native(
+            "shell",
+            "Run a command inside the bwrap sandbox.",
+            json!({"type": "object", "properties": {"command": {"type": "array", "items": {"type": "string"}}}}),
+        ),
+        ToolDescriptor::native(
+            "test",
+            "Run the project test command inside the bwrap sandbox.",
+            json!({"type": "object", "properties": {"command": {"type": "array", "items": {"type": "string"}}}}),
+        ),
+        ToolDescriptor::native(
+            "mcp",
+            "Call a tool published by an enabled MCP server.",
+            json!({"type": "object", "properties": {"tool": {"type": "string"}, "arguments": {"type": "object"}}, "required": ["tool"]}),
+        ),
+    ]
 }
 
 /// Resultado de um passo do loop.
@@ -105,6 +218,13 @@ pub enum StepOutcome {
     Written { path: String, preview: String },
     /// Comando executado no sandbox.
     Command(SandboxResult),
+    /// Resultado real de uma ferramenta MCP, com o erro estruturado quando falha.
+    McpResult {
+        server: String,
+        tool: String,
+        text: String,
+        is_error: bool,
+    },
     /// Acao bloqueada aguardando aprovacao humana.
     NeedsApproval { reason: String },
 }
@@ -124,6 +244,7 @@ pub struct EngineerSession {
     sandbox: SandboxConfig,
     transcript: Vec<String>,
     shell_approved: bool,
+    mcp: McpRegistry,
 }
 
 impl EngineerSession {
@@ -138,7 +259,36 @@ impl EngineerSession {
             sandbox,
             transcript: Vec::new(),
             shell_approved: false,
+            mcp: McpRegistry::empty(),
         }
+    }
+
+    /// Anexa os servidores MCP habilitados ao loop.
+    pub fn attach_mcp(&mut self, registry: McpRegistry) {
+        self.mcp = registry;
+    }
+
+    /// Construtor em cadeia para anexar o registry MCP.
+    pub fn with_mcp(mut self, registry: McpRegistry) -> Self {
+        self.attach_mcp(registry);
+        self
+    }
+
+    /// Catalogo de ferramentas do loop: acoes nativas mais as ferramentas MCP ativas.
+    pub fn tools(&self) -> Vec<ToolDescriptor> {
+        let mut tools = native_tools();
+        tools.extend(self.mcp.tools().iter().map(ToolDescriptor::from_mcp));
+        tools
+    }
+
+    /// Servidores MCP que responderam ao handshake.
+    pub fn mcp_servers(&self) -> Vec<String> {
+        self.mcp.servers()
+    }
+
+    /// Servidores habilitados que falharam ao iniciar, com o motivo real.
+    pub fn mcp_skipped(&self) -> &[(String, String)] {
+        self.mcp.skipped()
     }
 
     /// Workspace da sessao.
@@ -313,6 +463,45 @@ impl EngineerSession {
                     res.status
                 ));
                 Ok(StepOutcome::Command(res))
+            }
+            ActionKind::Mcp => {
+                let qualified = action
+                    .tool
+                    .clone()
+                    .context("acao mcp sem o campo 'tool' (use mcp__servidor__ferramenta)")?;
+                let args = action.arguments.clone().unwrap_or_else(|| json!({}));
+                if self.mcp.is_empty() {
+                    bail!(
+                        "nenhum servidor MCP ativo: habilite o servidor no modal Plugins antes de chamar {qualified}"
+                    );
+                }
+                if self.approval == ApprovalMode::Suggest {
+                    return Ok(StepOutcome::NeedsApproval {
+                        reason: format!("modo Sugestao nao executa ferramentas MCP: {qualified}"),
+                    });
+                }
+                let (server, tool) = mcp::split_qualified_name(&qualified)
+                    .with_context(|| format!("nome de ferramenta MCP invalido: {qualified}"))?;
+                let outcome = match self.mcp.call_server_tool(&server, &tool, args) {
+                    Ok(res) => StepOutcome::McpResult {
+                        server: server.clone(),
+                        tool: tool.clone(),
+                        text: McpClient::result_text(&res),
+                        is_error: false,
+                    },
+                    Err(err) => StepOutcome::McpResult {
+                        server: server.clone(),
+                        tool: tool.clone(),
+                        text: format!("{err:#}"),
+                        is_error: true,
+                    },
+                };
+                let is_error = matches!(&outcome, StepOutcome::McpResult { is_error: true, .. });
+                self.transcript.push(format!(
+                    "mcp {server}::{tool} -> {}",
+                    if is_error { "erro" } else { "ok" }
+                ));
+                Ok(outcome)
             }
         }
     }
@@ -498,6 +687,8 @@ mod tests {
                 query: None,
                 content: Some("outro conteudo\n".into()),
                 command: Vec::new(),
+                tool: None,
+                arguments: None,
             })
             .unwrap();
         assert!(matches!(outcome, StepOutcome::ProposedDiff { .. }));
@@ -516,6 +707,8 @@ mod tests {
                 query: None,
                 content: Some("@@ -1,3 +1,3 @@\n fn soma(a: i32, b: i32) -> i32 {\n-    a - b\n+    a * b\n }\n".into()),
                 command: Vec::new(),
+                tool: None,
+                arguments: None,
             })
             .unwrap();
         match outcome {
@@ -538,6 +731,8 @@ mod tests {
             query: None,
             content: None,
             command: vec!["echo".into(), "ok".into()],
+            tool: None,
+            arguments: None,
         };
         assert!(matches!(
             s.execute(act.clone()).unwrap(),
@@ -564,6 +759,8 @@ mod tests {
                 query: None,
                 content: None,
                 command: vec!["sh".into(), "-c".into(), "echo dentro > saida.txt && cat saida.txt".into()],
+                tool: None,
+                arguments: None,
             })
             .unwrap();
         match outcome {
@@ -588,6 +785,8 @@ mod tests {
                 query: Some("beta".into()),
                 content: None,
                 command: Vec::new(),
+                tool: None,
+                arguments: None,
             })
             .unwrap();
         match outcome {
@@ -610,6 +809,8 @@ mod tests {
                 query: None,
                 content: None,
                 command: Vec::new(),
+                tool: None,
+                arguments: None,
             })
             .unwrap_err();
         assert!(err.to_string().contains("fora do workspace"));
@@ -628,6 +829,8 @@ mod tests {
                     query: None,
                     content: Some("invasao".into()),
                     command: Vec::new(),
+                    tool: None,
+                    arguments: None,
                 })
                 .unwrap_err();
             assert!(
@@ -635,5 +838,180 @@ mod tests {
                 "esperava bloqueio de traversal em {bad}: {err}"
             );
         }
+    }
+
+    /// Grava um servidor MCP stdio de teste e o estado do modal Plugins.
+    fn stub_mcp_files(root: &Path, enabled: bool) -> (PathBuf, PathBuf) {
+        let script = root.join("stub_mcp.py");
+        std::fs::write(&script, crate::mcp::testing::STDIO_STUB).expect("script do servidor MCP");
+        let hermes = root.join("hermes_config.yaml");
+        let yaml = format!(
+            "mcp_servers:\n  eco:\n    command: python3\n    args: [\"-u\", \"{}\"]\n    enabled: true\n",
+            script.display()
+        );
+        std::fs::write(&hermes, yaml).expect("config.yaml do Hermes");
+        let mark_cfg = root.join("config.json");
+        std::fs::write(
+            &mark_cfg,
+            format!("{{\"mcp_server_state\":{{\"eco\":{enabled}}}}}"),
+        )
+        .expect("config.json do MARK");
+        (hermes, mark_cfg)
+    }
+
+    #[test]
+    fn enabled_mcp_server_is_exposed_and_called_in_the_loop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (hermes, mark_cfg) = stub_mcp_files(tmp.path(), true);
+        let servers = crate::mcp::load_enabled_servers(&hermes, &mark_cfg).expect("load");
+        assert_eq!(servers.len(), 1, "servidor habilitado nao foi carregado");
+        let registry = McpRegistry::start(&servers);
+        assert!(registry.skipped().is_empty(), "servidor nao subiu: {:?}", registry.skipped());
+
+        let mut session =
+            EngineerSession::new(tmp.path(), ApprovalMode::FullAuto).with_mcp(registry);
+        assert_eq!(session.mcp_servers(), vec!["eco".to_string()]);
+        let names: Vec<String> = session.tools().iter().map(|tool| tool.name.clone()).collect();
+        assert!(
+            names.contains(&"mcp__eco__echo".to_string()),
+            "catalogo sem a ferramenta MCP do servidor ativo: {names:?}"
+        );
+        assert!(
+            session
+                .tools()
+                .iter()
+                .any(|tool| matches!(&tool.origin, ToolOrigin::Mcp { server } if server == "eco")),
+            "origem da ferramenta nao aponta para o servidor MCP"
+        );
+
+        let outcome = session
+            .execute(Action {
+                kind: ActionKind::Mcp,
+                path: None,
+                query: None,
+                content: None,
+                command: Vec::new(),
+                tool: Some("mcp__eco__echo".into()),
+                arguments: Some(json!({"text": "ponta-a-ponta"})),
+            })
+            .expect("chamada MCP real");
+        match outcome {
+            StepOutcome::McpResult {
+                server,
+                tool,
+                text,
+                is_error,
+            } => {
+                assert_eq!(server, "eco");
+                assert_eq!(tool, "echo");
+                assert!(!is_error, "chamada valida marcada como erro: {text}");
+                assert_eq!(text, "ponta-a-ponta", "retorno real do servidor MCP");
+            }
+            other => panic!("esperava McpResult, veio {other:?}"),
+        }
+        assert!(
+            session
+                .transcript()
+                .iter()
+                .any(|line| line.contains("mcp eco::echo -> ok")),
+            "transcript sem o passo MCP: {:?}",
+            session.transcript()
+        );
+
+        // Erro do servidor volta estruturado para o loop, sem derrubar a sessao.
+        let err_outcome = session
+            .execute(Action {
+                kind: ActionKind::Mcp,
+                path: None,
+                query: None,
+                content: None,
+                command: Vec::new(),
+                tool: Some("mcp__eco__inexistente".into()),
+                arguments: Some(json!({})),
+            })
+            .expect("erro do MCP devolvido como passo");
+        match err_outcome {
+            StepOutcome::McpResult { is_error, text, .. } => {
+                assert!(is_error, "erro do servidor MCP nao marcado");
+                assert!(text.contains("inexistente") || text.contains("erro do MCP"), "texto: {text}");
+            }
+            other => panic!("esperava McpResult de erro, veio {other:?}"),
+        }
+    }
+
+    #[test]
+    fn disabled_mcp_server_is_absent_from_the_loop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (hermes, mark_cfg) = stub_mcp_files(tmp.path(), false);
+        let servers = crate::mcp::load_enabled_servers(&hermes, &mark_cfg).expect("load");
+        assert!(servers.is_empty(), "servidor desativado foi carregado: {servers:?}");
+        let registry = McpRegistry::start(&servers);
+        let mut session =
+            EngineerSession::new(tmp.path(), ApprovalMode::FullAuto).with_mcp(registry);
+
+        assert!(session.mcp_servers().is_empty());
+        let leaked: Vec<String> = session
+            .tools()
+            .iter()
+            .filter(|tool| tool.name.starts_with("mcp__") || matches!(tool.origin, ToolOrigin::Mcp { .. }))
+            .map(|tool| tool.name.clone())
+            .collect();
+        assert!(leaked.is_empty(), "ferramenta de servidor desativado no catalogo: {leaked:?}");
+
+        let err = session
+            .execute(Action {
+                kind: ActionKind::Mcp,
+                path: None,
+                query: None,
+                content: None,
+                command: Vec::new(),
+                tool: Some("mcp__eco__echo".into()),
+                arguments: Some(json!({"text": "nao deveria rodar"})),
+            })
+            .expect_err("servidor desativado nao pode executar");
+        assert!(
+            err.to_string().contains("nenhum servidor MCP ativo"),
+            "mensagem inesperada: {err}"
+        );
+    }
+
+    #[test]
+    fn suggest_mode_never_executes_mcp_tools() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (hermes, mark_cfg) = stub_mcp_files(tmp.path(), true);
+        let servers = crate::mcp::load_enabled_servers(&hermes, &mark_cfg).expect("load");
+        let mut session =
+            EngineerSession::new(tmp.path(), ApprovalMode::Suggest).with_mcp(McpRegistry::start(&servers));
+        let outcome = session
+            .execute(Action {
+                kind: ActionKind::Mcp,
+                path: None,
+                query: None,
+                content: None,
+                command: Vec::new(),
+                tool: Some("mcp__eco__echo".into()),
+                arguments: Some(json!({"text": "bloqueado"})),
+            })
+            .expect("suggest devolve NeedsApproval");
+        match outcome {
+            StepOutcome::NeedsApproval { reason } => {
+                assert!(reason.contains("mcp__eco__echo"), "motivo: {reason}")
+            }
+            other => panic!("esperava NeedsApproval, veio {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mcp_action_parses_tool_and_arguments() {
+        let action = Action::from_json(&json!({
+            "action": "mcp",
+            "tool": "mcp__eco__echo",
+            "arguments": {"text": "oi"},
+        }))
+        .expect("acao mcp");
+        assert_eq!(action.kind, ActionKind::Mcp);
+        assert_eq!(action.tool.as_deref(), Some("mcp__eco__echo"));
+        assert_eq!(action.arguments, Some(json!({"text": "oi"})));
+        assert!(action.kind.mutates());
     }
 }

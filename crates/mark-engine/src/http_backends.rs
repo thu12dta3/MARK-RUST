@@ -183,7 +183,18 @@ impl OllamaClient {
         &self,
         req: &CompletionRequest,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        on_chunk: impl FnMut(&str) -> bool,
+    ) -> Result<CompletionResponse> {
+        self.stream_full(req, cancel, on_chunk, |_reasoning| true).await
+    }
+
+    /// Streaming com raciocinio separado (`reasoning_content` / `thinking`).
+    pub async fn stream_full(
+        &self,
+        req: &CompletionRequest,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
         mut on_chunk: impl FnMut(&str) -> bool,
+        mut on_reasoning: impl FnMut(&str) -> bool,
     ) -> Result<CompletionResponse> {
         let mut options = serde_json::Map::new();
         options.insert("temperature".into(), req.temperature.into());
@@ -234,6 +245,23 @@ impl OllamaClient {
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
                     continue;
                 };
+                // Ollama nativo: `message.thinking` carrega o raciocinio quando o
+                // modelo suporta; o conteudo final continua em `message.content`.
+                if let Some(thinking) = v
+                    .get("message")
+                    .and_then(|m| m.get("thinking"))
+                    .and_then(|c| c.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    if !on_reasoning(thinking) {
+                        return Ok(CompletionResponse {
+                            content: full,
+                            model: req.model.clone(),
+                            prompt_tokens: None,
+                            completion_tokens: None,
+                        });
+                    }
+                }
                 if let Some(msg) = v.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str())
                 {
                     full.push_str(msg);
@@ -371,7 +399,18 @@ impl OpenAiClient {
         &self,
         req: &CompletionRequest,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        on_chunk: impl FnMut(&str) -> bool,
+    ) -> Result<CompletionResponse> {
+        self.stream_full(req, cancel, on_chunk, |_reasoning| true).await
+    }
+
+    /// Streaming com raciocinio separado (`reasoning_content` / `thinking`).
+    pub async fn stream_full(
+        &self,
+        req: &CompletionRequest,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
         mut on_chunk: impl FnMut(&str) -> bool,
+        mut on_reasoning: impl FnMut(&str) -> bool,
     ) -> Result<CompletionResponse> {
         let mut body = serde_json::json!({
             "model": req.model,
@@ -424,14 +463,18 @@ impl OpenAiClient {
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
                     continue;
                 };
-                let delta = v
-                    .get("choices")
-                    .and_then(|c| c.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|c| c.get("delta"))
-                    .and_then(|d| d.get("content"))
-                    .and_then(|c| c.as_str());
-                if let Some(d) = delta {
+                let (delta, reasoning) = parse_openai_delta(&v);
+                if let Some(reasoning) = reasoning.as_deref() {
+                    if !on_reasoning(reasoning) {
+                        return Ok(CompletionResponse {
+                            content: full,
+                            model: req.model.clone(),
+                            prompt_tokens: None,
+                            completion_tokens: None,
+                        });
+                    }
+                }
+                if let Some(d) = delta.as_deref() {
                     full.push_str(d);
                     if !on_chunk(d) {
                         return Ok(CompletionResponse {
@@ -451,6 +494,27 @@ impl OpenAiClient {
             completion_tokens: None,
         })
     }
+}
+
+/// Extrai `content` e o raciocinio (`reasoning_content` ou `thinking`) de um delta.
+pub fn parse_openai_delta(value: &serde_json::Value) -> (Option<String>, Option<String>) {
+    let delta = value
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("delta"))
+        .or_else(|| value.get("message"));
+    let Some(delta) = delta else {
+        return (None, None);
+    };
+    let content = delta.get("content").and_then(|c| c.as_str()).map(|s| s.to_string());
+    let reasoning = delta
+        .get("reasoning_content")
+        .or_else(|| delta.get("reasoning"))
+        .or_else(|| delta.get("thinking"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string());
+    (content.filter(|s| !s.is_empty()), reasoning.filter(|s| !s.is_empty()))
 }
 
 /// Extrai a lista de modelos de uma resposta `/models` OpenAI-compatible.
@@ -621,5 +685,33 @@ mod tests {
         std::fs::write(&p, &data).unwrap();
         assert!(is_gguf(&p));
         let _ = std::fs::remove_file(&p);
+    }
+}
+
+#[cfg(test)]
+mod delta_tests {
+    use super::parse_openai_delta;
+
+    #[test]
+    fn parse_openai_delta_reads_reasoning_and_content() {
+        let with_reasoning: serde_json::Value = serde_json::from_str(
+            r#"{"choices":[{"delta":{"reasoning_content":"penso","content":null}}]}"#,
+        )
+        .expect("json");
+        let (content, reasoning) = parse_openai_delta(&with_reasoning);
+        assert_eq!(content, None);
+        assert_eq!(reasoning.as_deref(), Some("penso"));
+
+        let with_thinking: serde_json::Value =
+            serde_json::from_str(r#"{"choices":[{"delta":{"thinking":"reflexao"}}]}"#).expect("json");
+        assert_eq!(parse_openai_delta(&with_thinking).1.as_deref(), Some("reflexao"));
+
+        let final_answer: serde_json::Value = serde_json::from_str(
+            r#"{"choices":[{"delta":{"content":"resposta limpa","reasoning_content":null}}]}"#,
+        )
+        .expect("json");
+        let (content, reasoning) = parse_openai_delta(&final_answer);
+        assert_eq!(content.as_deref(), Some("resposta limpa"));
+        assert_eq!(reasoning, None);
     }
 }

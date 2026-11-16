@@ -94,6 +94,72 @@ def _tuning_payload(reasoning_level: str) -> dict:
 
 
 class ChatMixin:
+
+    def _stream_request(self, payload: dict, bubble=None, thinking=None, cancel=None) -> str:
+        """Consome o SSE do mark-server pintando tokens ao vivo na bolha.
+
+        Sem servidor SSE disponivel o payload volta pelo caminho nao-streaming:
+        o texto final e o mesmo e nada e inventado.
+        """
+        from .sse_client import StreamCancelled, stream_chat
+        from .think_stream import ThinkStreamParser
+
+        parser = ThinkStreamParser()
+        state = {"text": "", "reasoning": ""}
+
+        def on_content(chunk: str) -> None:
+            for kind, piece in parser.feed(chunk):
+                if kind == "reasoning":
+                    state["reasoning"] += piece
+                    if thinking is not None:
+                        thinking.append_reasoning(piece)
+                else:
+                    state["text"] += piece
+                    if bubble is not None:
+                        bubble.set_text(state["text"])
+
+        def on_reasoning(chunk: str) -> None:
+            for kind, piece in parser.feed_reasoning(chunk):
+                if kind == "reasoning":
+                    state["reasoning"] += piece
+                    if thinking is not None:
+                        thinking.append_reasoning(piece)
+
+        try:
+            full = stream_chat(
+                "http://127.0.0.1:8931/v1/chat/completions",
+                payload,
+                on_content,
+                on_reasoning,
+                cancelled=(lambda: bool(cancel is not None and cancel())),
+            )
+        except StreamCancelled:
+            return state["text"]
+        except (OSError, RuntimeError, ValueError):
+            from . import desktop as desktop_module
+
+            _, body = desktop_module._request("/v1/chat/completions", payload)
+            data = json.loads(body)
+            return data["choices"][0]["message"]["content"]
+        for kind, piece in parser.finalize():
+            if kind == "reasoning":
+                state["reasoning"] += piece
+                if thinking is not None:
+                    thinking.append_reasoning(piece)
+            else:
+                state["text"] += piece
+                if bubble is not None:
+                    bubble.set_text(state["text"])
+        if thinking is not None:
+            thinking.finish()
+        return state["text"] or full
+
+    def _run_chat_payload(self, payload: dict) -> str:
+        """Executa o payload com streaming real quando o motor e local."""
+        payload = dict(payload)
+        payload["stream"] = True
+        return self._stream_request(payload)
+
     def _resolve_model_and_provider(self) -> tuple[str, str]:
         """Extrai deterministicamente o active_model_id e provider_name configurados na UI/sessão."""
         active_model_id = ""
@@ -474,7 +540,7 @@ class ChatMixin:
 
                 payload = {
                     "model": profile,
-                    "stream": False,
+                    "stream": True,
                     "mark_reasoning_level": reasoning_level,
                     **_tuning_payload(reasoning_level),
                     "messages": req_msgs,
@@ -486,9 +552,7 @@ class ChatMixin:
                     "mark_attachments": file_context,
                     "mark_context": context_payload,
                 }
-                _, body = desktop_module._request("/v1/chat/completions", payload)
-                result = json.loads(body)
-                return result["choices"][0]["message"]["content"]
+                return self._run_chat_payload(payload)
 
             if not engineer_mode:
                 content = [{"type": "text", "text": message}]
@@ -507,7 +571,7 @@ class ChatMixin:
 
                 payload = {
                     "model": profile,
-                    "stream": False,
+                    "stream": True,
                     "mark_reasoning_level": reasoning_level,
                     **_tuning_payload(reasoning_level),
                     "messages": payload_messages,
@@ -519,9 +583,7 @@ class ChatMixin:
                     "mark_attachments": file_context,
                     "mark_context": context_payload,
                 }
-                _, body = desktop_module._request("/v1/chat/completions", payload)
-                result = json.loads(body)
-                return result["choices"][0]["message"]["content"]
+                return self._run_chat_payload(payload)
 
             cancel_sig = task_instance.cancel_signal if task_instance is not None else None
 

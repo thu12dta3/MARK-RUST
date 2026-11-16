@@ -65,6 +65,7 @@ fn imports_real_gguf_into_ollama_and_generates() {
         let drive = async {
             while let Some(ev) = rx.recv().await {
                 match ev {
+                    StreamEvent::Reasoning(_) => {}
                     StreamEvent::Delta(d) => {
                         text.push_str(&d);
                         if text.len() >= 4 {

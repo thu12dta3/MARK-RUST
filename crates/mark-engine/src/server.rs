@@ -153,6 +153,8 @@ struct Delta<'a> {
     role: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<&'a str>,
 }
 
 impl LocalServer {
@@ -435,6 +437,7 @@ async fn handle(
                                 delta: Delta {
                                     role: None,
                                     content: Some(&d),
+                                    reasoning_content: None,
                                 },
                                 finish_reason: None,
                             }],
@@ -445,6 +448,32 @@ async fn handle(
                         }
                         emitted += 1;
                         if limit > 0 && emitted >= limit {
+                            break;
+                        }
+                    }
+                    StreamEvent::Reasoning(r) => {
+                        // Raciocinio vai em campo proprio: a UI monta a caixa de
+                        // pensamento sem sujar o corpo da resposta.
+                        let chunk = ChatChunk {
+                            id: &id,
+                            object: "chat.completion.chunk",
+                            created,
+                            model: &model2,
+                            choices: vec![ChunkChoice {
+                                index: 0,
+                                delta: Delta {
+                                    role: None,
+                                    content: None,
+                                    reasoning_content: Some(&r),
+                                },
+                                finish_reason: None,
+                            }],
+                        };
+                        if stream
+                            .write_all(format!("data: {}\n\n", serde_json::to_string(&chunk)?).as_bytes())
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -469,6 +498,7 @@ async fn handle(
                     delta: Delta {
                         role: None,
                         content: None,
+                        reasoning_content: None,
                     },
                     finish_reason: Some("stop"),
                 }],
@@ -502,6 +532,7 @@ async fn handle(
                     text.push_str(&d);
                     emitted += 1;
                 }
+                StreamEvent::Reasoning(_) => {}
                 StreamEvent::Error(e) => {
                     let payload = serde_json::json!({"error": {"message": e}});
                     return write_json(&mut stream, 500, &payload.to_string()).await;

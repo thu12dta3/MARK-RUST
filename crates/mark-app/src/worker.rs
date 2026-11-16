@@ -229,6 +229,11 @@ fn run(rx: Receiver<Job>, tx: Sender<Ev>, cancel: Arc<AtomicBool>) {
                                     Some(StreamEvent::Usage { prompt_tokens, completion_tokens }) => {
                                         let _ = sender.send(Ev::Done { prompt_tokens, completion_tokens });
                                     }
+                                    Some(StreamEvent::Reasoning(text)) => {
+                                        // A janela GTK exibe apenas o texto final;
+                                        // o raciocinio vira uma linha informativa.
+                                        let _ = sender.send(Ev::Info(format!("thinking: {text}")));
+                                    }
                                     Some(StreamEvent::Error(e)) => {
                                         let _ = sender.send(Ev::Error(e));
                                     }

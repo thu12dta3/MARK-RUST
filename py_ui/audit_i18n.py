@@ -58,6 +58,17 @@ TEXT_CTORS = (
 ALLOW_LIST = re.compile(
     r"^(MARK|Mark|miceworks|miceworks/[\w.-]+|[\w.-]+\.(py|rs|gguf|json|toml|so)|[A-Z]{1,4}|[/:@._|·\-+ ]+|\d+[smhd%]?)$"
 )
+#: Strings tecnicas que nunca aparecem como texto de UI (ids, SQL, mime, CSS).
+TECHNICAL_TEXT = re.compile(
+    r"^[\w./-]+\.(py|rs|json|toml|yaml|yml|gguf|safetensors|mkbin|bin|so|db|md|log|svg)$"
+    r"|^[a-z0-9]+(_[a-z0-9]+)+$"
+    r"|^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|PRAGMA)\b"
+    r"|^[a-z]+/[a-z0-9.+-]+$"
+    r"|^[#.][\w-]+\s*[:;]"
+    r"|^\d+(px|ms|s|MiB|GiB|%)?$"
+    r"|^[a-z]{1,3}$"
+)
+
 PT_MARKERS = re.compile(
     r"\b(nao|não|para|com|sem|uma|um|os|as|de|da|do|em|que|por|seu|sua|voce|você|"
     r"esta|está|configura|conversa|mensagem|arquivo|criar|abrir|fechar|salvar|excluir|"
@@ -127,6 +138,8 @@ def scan_file(path: Path, catalog: dict[str, tuple[str, ...]]) -> tuple[list[str
         if _inside_tr(node, parents):
             continue
         if not re.search(r"[A-Za-z]", text):
+            continue
+        if TECHNICAL_TEXT.match(text):
             continue
         hardcoded.append(f"{path.relative_to(ROOT.parent)}:{node.lineno}: {name}({text!r})")
     return hardcoded, missing, []

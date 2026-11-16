@@ -82,6 +82,18 @@ class MessageBubbleWidget(QFrame):
     self._link_handler = link_handler
     self._build_ui()
 
+  def set_text(self, text: str) -> None:
+    """Atualiza o corpo da bolha durante o streaming (sem recriar o widget)."""
+    self.text = text
+    label = getattr(self, "body_label", None) or getattr(self, "content_label", None)
+    if label is not None:
+      label.setText(text)
+      return
+    for child in self.findChildren(QLabel):
+      if child is not getattr(self, "who", None):
+        child.setText(text)
+        return
+
   def _build_ui(self) -> None:
     is_user = self.role == "user"
     self.setObjectName("userBubble" if is_user else "assistantBubble")

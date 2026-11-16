@@ -32,6 +32,47 @@ pub struct McpTool {
     pub input_schema: Value,
 }
 
+/// Aplica o estado persistido pela UI (`mcp_server_state`) a uma lista de servidores.
+///
+/// Um servidor desativado no modal Plugins nao e carregado: suas ferramentas
+/// simplesmente nao entram no registry do `mark-engineer`.
+pub fn apply_enabled_state(
+    servers: Vec<McpServerConfig>,
+    state: &std::collections::HashMap<String, bool>,
+) -> Vec<McpServerConfig> {
+    servers
+        .into_iter()
+        .filter(|server| *state.get(&server.name).unwrap_or(&true))
+        .collect()
+}
+
+/// Le `mcp_server_state` do config.json do MARK (escrito pelo modal Plugins).
+pub fn read_mark_state(path: &Path) -> std::collections::HashMap<String, bool> {
+    let mut out = std::collections::HashMap::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return out;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return out;
+    };
+    if let Some(map) = value.get("mcp_server_state").and_then(|v| v.as_object()) {
+        for (name, enabled) in map {
+            out.insert(name.clone(), enabled.as_bool().unwrap_or(true));
+        }
+    }
+    out
+}
+
+/// Carrega os servidores do Hermes, aplica o estado do MARK e devolve so os ativos.
+pub fn load_enabled_servers(
+    hermes_config: &Path,
+    mark_config: &Path,
+) -> Result<Vec<McpServerConfig>> {
+    let servers = load_mcp_servers(hermes_config)?;
+    let state = read_mark_state(mark_config);
+    Ok(apply_enabled_state(servers, &state))
+}
+
 /// Carrega os servidores MCP habilitados a partir do config.yaml do Hermes.
 pub fn load_mcp_servers(path: &Path) -> Result<Vec<McpServerConfig>> {
     if !path.is_file() {
@@ -406,6 +447,34 @@ for line in sys.stdin:
             .call_tool("echo", json!({"text": "ping-mark"}))
             .expect("chamada deve funcionar");
         assert_eq!(McpClient::result_text(&res), "ping-mark");
+    }
+
+    #[test]
+    fn disabled_state_removes_servers_from_the_registry() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let hermes = tmp.path().join("config.yaml");
+        std::fs::write(
+            &hermes,
+            "mcp_servers:\n  ligado:\n    command: echo\n    args: [\"a\"]\n    enabled: true\n  desligado:\n    command: echo\n    args: [\"b\"]\n    enabled: true\n",
+        )
+        .expect("yaml");
+        let mark_cfg = tmp.path().join("config.json");
+
+        // Sem estado da UI: os dois servidores entram.
+        std::fs::write(&mark_cfg, r#"{"mcp_server_state":{}}"#).expect("json");
+        let both = load_enabled_servers(&hermes, &mark_cfg).expect("load");
+        assert_eq!(both.len(), 2, "estado vazio deveria manter os dois servidores");
+
+        // Desligado no modal Plugins: sai do registry.
+        std::fs::write(&mark_cfg, r#"{"mcp_server_state":{"desligado":false}}"#).expect("json");
+        let filtered = load_enabled_servers(&hermes, &mark_cfg).expect("load");
+        assert_eq!(filtered.len(), 1, "servidor desativado nao foi removido");
+        assert_eq!(filtered[0].name, "ligado");
+
+        // Religado: volta a aparecer.
+        std::fs::write(&mark_cfg, r#"{"mcp_server_state":{"desligado":true}}"#).expect("json");
+        let again = load_enabled_servers(&hermes, &mark_cfg).expect("load");
+        assert_eq!(again.len(), 2, "servidor religado nao voltou ao registry");
     }
 
     #[test]

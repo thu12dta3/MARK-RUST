@@ -310,6 +310,14 @@ TRANSLATIONS: dict[str, tuple[str, str, str, str, str, str, str]] = {
         "Thinking...", "Pensando...", "正在思考...", "सोच रहा है...",
         "Pensando...", "Reflexion...", "يفكر...",
     ),
+    "Plugins": (
+        "Plugins", "Plugins", "插件", "प्लगइन", "Plugins", "Plugins", "الإضافات",
+    ),
+    "Models discovered: {count}": (
+        "Models discovered: {count}", "Modelos descobertos: {count}",
+        "已发现模型：{count}", "खोजे गए मॉडल: {count}", "Modelos descubiertos: {count}",
+        "Modeles decouverts : {count}", "النماذج المكتشفة: {count}",
+    ),
     "Sync Models": (
         "Sync Models", "Sincronizar modelos", "同步模型", "मॉडल सिंक करें",
         "Sincronizar modelos", "Synchroniser les modeles", "مزامنة النماذج",

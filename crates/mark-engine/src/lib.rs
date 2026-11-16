@@ -56,8 +56,10 @@ impl Engine {
 /// Evento emitido durante a geracao.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
-    /// Fragmento de texto.
+    /// Fragmento de texto da resposta final.
     Delta(String),
+    /// Fragmento de raciocinio (`reasoning_content` / `thinking`).
+    Reasoning(String),
     /// Metadados de uso ao final.
     Usage {
         prompt_tokens: Option<u32>,
@@ -224,12 +226,22 @@ pub async fn generate_streaming(
             let tx2 = tx.clone();
             let cancel2 = cancel.clone();
             let res = client
-                .stream(&req, cancel.clone(), |chunk| {
-                    if cancel2.load(Ordering::Relaxed) {
-                        return false;
-                    }
-                    tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
-                })
+                .stream_full(
+                    &req,
+                    cancel.clone(),
+                    |chunk| {
+                        if cancel2.load(Ordering::Relaxed) {
+                            return false;
+                        }
+                        tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
+                    },
+                    |reasoning| {
+                        if cancel2.load(Ordering::Relaxed) {
+                            return false;
+                        }
+                        tx2.send(StreamEvent::Reasoning(reasoning.to_string())).is_ok()
+                    },
+                )
                 .await;
             match res {
                 Ok(r) => {
@@ -268,12 +280,22 @@ pub async fn generate_streaming(
             let tx2 = tx.clone();
             let cancel2 = cancel.clone();
             let res = client
-                .stream(&req, cancel.clone(), |chunk| {
-                    if cancel2.load(Ordering::Relaxed) {
-                        return false;
-                    }
-                    tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
-                })
+                .stream_full(
+                    &req,
+                    cancel.clone(),
+                    |chunk| {
+                        if cancel2.load(Ordering::Relaxed) {
+                            return false;
+                        }
+                        tx2.send(StreamEvent::Delta(chunk.to_string())).is_ok()
+                    },
+                    |reasoning| {
+                        if cancel2.load(Ordering::Relaxed) {
+                            return false;
+                        }
+                        tx2.send(StreamEvent::Reasoning(reasoning.to_string())).is_ok()
+                    },
+                )
                 .await;
             match res {
                 Ok(r) => {
